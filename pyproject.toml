@@ -1,0 +1,38 @@
+[project]
+name = "tern"
+version = "0.1.0"
+description = "A provider-agnostic, flexible, multi-agent coding assistance system"
+readme = "README.md"
+authors = [
+    { name = "keiferc", email = "15503711+keiferc@users.noreply.github.com" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+tern = "tern:main"
+
+[build-system]
+requires = ["uv_build>=0.11.14,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.15.5",
+    "ty>=0.0.21",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\")",
+    "serial",
+]
+addopts = "-v --cov=datalab --cov-branch --cov-report=term-missing"
+
+[tool.coverage.run]
+omit = [
+    "__init__.py" # empty files
+]
