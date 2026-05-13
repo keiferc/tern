@@ -15,7 +15,7 @@ TODO
 
 ```bash
 sbx login
-# TODO
+uv run tern
 ```
 TODO
 
