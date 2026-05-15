@@ -1,8 +1,8 @@
+import operator
 import typing as T
 
-import langchain_core.messages as lc_msg
+import langchain.messages as lc_msg
 import langgraph.graph as lg_graph
-import langgraph.graph.message as lg_msg
 import langgraph.graph.state as lg_state
 
 import tern.subagents as tern_agents
@@ -15,7 +15,7 @@ import tern.subagents as tern_agents
 
 
 class AgentState(T.TypedDict):
-    messages: T.Annotated[list[lc_msg.BaseMessage], lg_msg.add_messages]
+    messages: T.Annotated[list[lc_msg.AnyMessage], operator.add]
     to_stop: bool
 
 
