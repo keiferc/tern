@@ -11,18 +11,26 @@ Not an intern or an extern, just a tern: a provider-agnostic, flexible, multi-ag
     - microVM proxy supports credential injection
     - Agent has deterministic human-in-the-loop (HITL) controls for dependency use approval
 - Customizability
-    - Subagent models and profiles are customizable through Docker Sandbox Kits
+    - Choose subagent models based on your risk level, task complexity, and cost (e.g., can use open source model for Summarizer subagent, GPT for Maker subagent, and Claude for Checker subagent)
+    - Subagent personas and success rubrics are customizable
 
 ## Requirements
 
-- [Docker Sandbox](https://www.docker.com/products/docker-sandboxes/) >= 0.28
+- [Docker Sandbox](https://www.docker.com/products/docker-sandboxes/) 0.28+
+- [uv](https://docs.astral.sh/uv/) 0.11+
 
 ## Download and Installation
 
 ```bash
-# Example using uv -- can always use `pip install "tern @ git+https://.../tern.git"`
 uv add "tern @ git+https://github.com/keiferc/tern.git"
-uv sync
+```
+
+### Store API keys (once per machine)
+Uses OAuth flow so agents never see hardcoded credentials.
+
+```bash
+sbx secret set -g anthropic   # for Claude
+sbx secret set -g openai      # for Codex / GPT (optional)
 ```
 
 ## Usage
@@ -39,6 +47,19 @@ positional arguments:
 
 options:
   -h, --help  show this help message and exit
+```
+
+### Customization
+
+```bash
+.tern
+├── checker.md # for customizing Checker subagent
+├── config.yaml # for specifying models and allowable agent tools
+├── CONSTITUTION.md # for defining rules that apply to all agents
+├── maker.md # for customizing Maker subagent
+├── planner.md # for customizing Planner subagent
+├── spec.yaml # Docker Sandbox Mixin Kit for customizing sandbox
+└── summarizer.md # for customizing Summarizer subagent
 ```
 
 ## Agent Architecture
@@ -72,9 +93,6 @@ flowchart TB
 ```
 
 ## Contributing
-
-### Additional Requirements
-- [uv](https://docs.astral.sh/uv/) >= 0.11
 
 ### Installation
 ```bash
