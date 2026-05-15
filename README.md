@@ -23,10 +23,6 @@ TODO
 
 ## Usage
 
-```bash
-sbx login
-uv run tern
-```
 TODO
 
 ## Agent Architecture

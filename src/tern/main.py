@@ -14,8 +14,18 @@ import tern.agent as tern_agent
 def invoke_agent() -> None:
     agent = tern_agent.build_agent()
 
-    messages = [lc_msg.HumanMessage(content="Starting workflow")]
-    res = agent.invoke({"messages": messages})
+    state = {
+        "objective": None,
+        "plan": None,
+        "plan_approved": None,
+        "new_deps": [],
+        "deps_approved": None,
+        "qa_output": None,
+        "issues": [],
+        "need_handoff": False,
+        "messages": [lc_msg.HumanMessage(content="Starting workflow")],
+    }
+    res = agent.invoke(state)
 
     print(res)
 

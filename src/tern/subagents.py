@@ -1,21 +1,36 @@
 # ========================================================================= #
 #                                                                           #
-#                               Agents                                      #
+#                               Subagents                                   #
 #                                                                           #
 # ========================================================================= #
 
 
-def router_subagent() -> list[str]:
-    return ["I am a placeholder for the router agent."]
+def planner_subagent(objective: str) -> str:
+    return ""
 
 
-def planner_subagent() -> list[str]:
-    return ["I am a placeholder for the planner agent."]
+def maker_subagent(plan: str) -> None:
+    pass
 
 
-def programmer_subagent() -> list[str]:
-    return ["I am a placeholder for the programmer agent."]
+def checker_subagent(qa_output: str) -> list[str]:
+    return []
 
 
-def evaluator_subagent() -> list[str]:
-    return ["I am a placeholder for the evaluator agent."]
+def summarizer_subagent(state: dict) -> str:
+    return ""
+
+
+# ========================================================================= #
+#                                                                           #
+#                               Tool nodes                                  #
+#                                                                           #
+# ========================================================================= #
+
+
+def dep_check_node() -> list[str]:
+    return []
+
+
+def qa_runner_node() -> str:
+    return ""
