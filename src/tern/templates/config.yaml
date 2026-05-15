@@ -1,0 +1,10 @@
+models:
+  default: "anthropic:claude-sonnet-4-6"
+
+checker:
+  tools:
+    - "uv run sync"
+    - "uv run ruff check ."
+    - "uv run ruff format --check ."
+    - "uv run ty check"
+    - "uv run pytest"

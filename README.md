@@ -19,11 +19,27 @@ Not an intern or an extern, just a tern: a provider-agnostic, flexible, multi-ag
 
 ## Download and Installation
 
-TODO
+```bash
+# Example using uv -- can always use `pip install "tern @ git+https://.../tern.git"`
+uv add "tern @ git+https://github.com/keiferc/tern.git"
+uv sync
+```
 
 ## Usage
 
-TODO
+```bash
+usage: tern [-h] {init,up} ...
+
+Provider-agnostic multi-agent coding assistant
+
+positional arguments:
+  {init,up}
+    init      Initialise tern in the current project
+    up        Start a tern session (not yet implemented)
+
+options:
+  -h, --help  show this help message and exit
+```
 
 ## Agent Architecture
 

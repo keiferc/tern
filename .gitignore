@@ -1,5 +1,6 @@
 # -------- START CUSTOM IGNORES --------
 .notes/
+.tern/
 
 # -------- END CUSTOM IGNORES --------
 

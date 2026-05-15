@@ -1,4 +1,5 @@
 import operator
+import pathlib
 import typing as T
 
 import langchain.messages as lc_msg
@@ -63,7 +64,9 @@ def checker_graph_node(state: AgentState) -> dict:
 
 
 def summarizer_graph_node(state: AgentState) -> dict:
-    tern_subagents.summarizer_subagent(dict(state))
+    doc = tern_subagents.summarizer_subagent(dict(state))
+    if doc:
+        pathlib.Path.cwd().joinpath("HANDOFF.md").write_text(doc)
     return {}
 
 
@@ -78,12 +81,14 @@ def route_from_user(state: AgentState) -> str:
     if not state["objective"]:
         return "summarizer" if state["need_handoff"] else lg_graph.END
 
-    # Cycle complete: qa_runner and checker both ran with no issues
-    if state["qa_output"] is not None and not state["issues"]:
-        return "user"
-
     if state["plan_approved"] is not True:
         return "planner"
+
+    # Cycle complete: full pipeline ran with no issues.
+    # TODO: REPL must clear qa_output/issues/deps_approved when starting a
+    # new objective so stale state from the previous cycle does not trigger this.
+    if state["qa_output"] is not None and not state["issues"]:
+        return "user"
 
     if state["new_deps"] and state["deps_approved"] is None:
         return "user"
@@ -91,6 +96,8 @@ def route_from_user(state: AgentState) -> str:
     if state["deps_approved"] is True:
         return "qa_runner"
 
+    # deps_approved=False: user rejected the proposed deps; send maker back
+    # to rework the implementation without adding them.
     return "maker"
 
 

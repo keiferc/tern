@@ -1,10 +1,13 @@
 import operator
+import pathlib
 import typing as T
+import unittest.mock
 
 import langchain.messages as lc_msg
 import langgraph.graph as lg_graph
 
 import tern.agent as agent
+import tern.subagents as tern_subagents
 
 
 def make_state(**kwargs: T.Any) -> agent.AgentState:
@@ -53,6 +56,18 @@ def test_route_user_cycle_complete():
         issues=[],
     )
     assert agent.route_from_user(state) == "user"
+
+
+def test_route_user_stale_qa_output_plan_not_approved():
+    # plan check must fire before cycle-complete check: stale qa_output from a
+    # previous cycle must not prevent routing to planner.
+    state = make_state(
+        objective="build a model",
+        plan_approved=False,
+        qa_output="all tests passed",
+        issues=[],
+    )
+    assert agent.route_from_user(state) == "planner"
 
 
 def test_route_user_plan_not_yet_approved():
@@ -176,6 +191,23 @@ def test_checker_graph_node_returns_issues():
 def test_summarizer_graph_node_returns_empty_dict():
     state = make_state()
     assert agent.summarizer_graph_node(state) == {}
+
+
+def test_summarizer_graph_node_writes_handoff_doc(tmp_path: pathlib.Path):
+    state = make_state()
+    with unittest.mock.patch.object(
+        tern_subagents, "summarizer_subagent", return_value="# Handoff\n\nDone."
+    ):
+        with unittest.mock.patch("pathlib.Path.cwd", return_value=tmp_path):
+            agent.summarizer_graph_node(state)
+    assert (tmp_path / "HANDOFF.md").read_text() == "# Handoff\n\nDone."
+
+
+def test_summarizer_graph_node_skips_write_when_empty(tmp_path: pathlib.Path):
+    state = make_state()
+    with unittest.mock.patch("pathlib.Path.cwd", return_value=tmp_path):
+        agent.summarizer_graph_node(state)
+    assert not (tmp_path / "HANDOFF.md").exists()
 
 
 # ── messages accumulation ─────────────────────────────────────────────────

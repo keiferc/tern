@@ -12,10 +12,11 @@ dependencies = [
     "langchain-anthropic>=1.4.3",
     "langchain-openai>=1.2.1",
     "langgraph>=1.2.0",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
-tern = "tern.main:invoke_agent"
+tern = "tern.main:main"
 
 [build-system]
 requires = ["uv_build>=0.11.14,<0.12.0"]
