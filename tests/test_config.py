@@ -31,6 +31,7 @@ def valid_config_yaml(tern_dir: pathlib.Path) -> pathlib.Path:
     data = {
         "models": {"default": "anthropic:claude-sonnet-4-6", "maker": "openai:gpt-4o"},
         "checker": {"tools": ["uv run ruff check .", "uv run pytest"]},
+        "max_iterations": {"default": 20, "planner": 10},
     }
     path = tern_dir / "config.yaml"
     path.write_text(yaml.dump(data))
@@ -62,6 +63,8 @@ def test_load_config_valid(tern_dir: pathlib.Path, valid_config_yaml: pathlib.Pa
     assert cfg.models["default"] == "anthropic:claude-sonnet-4-6"
     assert cfg.models["maker"] == "openai:gpt-4o"
     assert cfg.checker_tools == ["uv run ruff check .", "uv run pytest"]
+    assert cfg.max_iterations["default"] == 20
+    assert cfg.max_iterations["planner"] == 10
 
 
 def test_load_config_missing_default_raises(tern_dir: pathlib.Path):
@@ -77,6 +80,34 @@ def test_load_config_missing_checker_tools_raises(tern_dir: pathlib.Path):
         yaml.dump({"models": {"default": "anthropic:claude-sonnet-4-6"}})
     )
     with pytest.raises(ValueError, match="checker.tools"):
+        config.load_config(tern_dir)
+
+
+def test_load_config_missing_max_iterations_default_raises(tern_dir: pathlib.Path):
+    (tern_dir / "config.yaml").write_text(
+        yaml.dump(
+            {
+                "models": {"default": "anthropic:claude-sonnet-4-6"},
+                "checker": {"tools": ["uv run pytest"]},
+                "max_iterations": {"maker": 10},
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="max_iterations.default"):
+        config.load_config(tern_dir)
+
+
+def test_load_config_null_max_iterations_raises(tern_dir: pathlib.Path):
+    (tern_dir / "config.yaml").write_text(
+        yaml.dump(
+            {
+                "models": {"default": "anthropic:claude-sonnet-4-6"},
+                "checker": {"tools": ["uv run pytest"]},
+                "max_iterations": None,
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="max_iterations.default"):
         config.load_config(tern_dir)
 
 
@@ -234,6 +265,14 @@ def test_cmd_init_default_checker_tools(tmp_path: pathlib.Path, mock_sbx_ok):
         importlib.resources.files(tern_templates).joinpath("config.yaml").read_bytes()
     )
     assert cfg.checker_tools == template["checker"]["tools"]
+
+
+def test_cmd_init_default_max_iterations(tmp_path: pathlib.Path, mock_sbx_ok):
+    with unittest.mock.patch("pathlib.Path.cwd", return_value=tmp_path):
+        main.cmd_init(argparse.Namespace())
+
+    cfg = config.load_config(tmp_path / ".tern")
+    assert "default" in cfg.max_iterations
 
 
 def test_cmd_init_valid_spec_yaml(tmp_path: pathlib.Path, mock_sbx_ok):

@@ -1,9 +1,17 @@
 models:
   default: "anthropic:claude-sonnet-4-6"
+  planner: "anthropic:claude-sonnet-4-6"
+  maker: "anthropic:claude-sonnet-4-6"
+  checker: "anthropic:claude-sonnet-4-6"
+  summarizer: "anthropic:claude-sonnet-4-6"
+
+max_iterations:
+  default: 20
+  planner: 20
+  maker: 20
 
 checker:
   tools:
-    - "uv run sync"
     - "uv run ruff check ."
     - "uv run ruff format --check ."
     - "uv run ty check"

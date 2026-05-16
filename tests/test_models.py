@@ -10,6 +10,7 @@ def make_config(**models: str) -> tern_config.Config:
     return tern_config.Config(
         models={"default": "anthropic:claude-sonnet-4-6", **models},
         checker_tools=[],
+        max_iterations={"default": 20},
     )
 
 

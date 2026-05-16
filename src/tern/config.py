@@ -22,6 +22,7 @@ VALID_AGENTS: frozenset[str] = frozenset({"planner", "maker", "checker", "summar
 class Config:
     models: dict[str, str]
     checker_tools: list[str]
+    max_iterations: dict[str, int]
 
 
 @dataclasses.dataclass
@@ -57,7 +58,13 @@ def load_config(tern_dir: pathlib.Path) -> Config:
     if checker_tools is None:
         raise ValueError("config.yaml missing required field: checker.tools")
 
-    return Config(models=models, checker_tools=checker_tools)
+    max_iterations: dict[str, int] = raw.get("max_iterations") or {}
+    if "default" not in max_iterations:
+        raise ValueError("config.yaml missing required field: max_iterations.default")
+
+    return Config(
+        models=models, checker_tools=checker_tools, max_iterations=max_iterations
+    )
 
 
 def load_spec(tern_dir: pathlib.Path) -> Spec:

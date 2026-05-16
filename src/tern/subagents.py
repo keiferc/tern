@@ -1,3 +1,7 @@
+import pathlib
+
+import tern.config as tern_config
+
 # ========================================================================= #
 #                                                                           #
 #                               Subagents                                   #
@@ -5,19 +9,30 @@
 # ========================================================================= #
 
 
-def planner_subagent(objective: str) -> str:
+def planner_subagent(
+    objective: str, config: tern_config.Config, tern_dir: pathlib.Path
+) -> str:
     return ""
 
 
-def maker_subagent(plan: str) -> None:
-    pass
-
-
-def checker_subagent(qa_output: str) -> list[str]:
+def maker_subagent(
+    plan: str, config: tern_config.Config, tern_dir: pathlib.Path
+) -> list[str]:
     return []
 
 
-def summarizer_subagent(state: dict) -> str:
+def checker_subagent(
+    qa_output: str,
+    file_contents: str,
+    config: tern_config.Config,
+    tern_dir: pathlib.Path,
+) -> list[str]:
+    return []
+
+
+def summarizer_subagent(
+    state: dict, config: tern_config.Config, tern_dir: pathlib.Path
+) -> str:
     return ""
 
 
@@ -28,9 +43,9 @@ def summarizer_subagent(state: dict) -> str:
 # ========================================================================= #
 
 
-def dep_check_node() -> list[str]:
+def dep_check_node(config: tern_config.Config, tern_dir: pathlib.Path) -> list[str]:
     return []
 
 
-def qa_runner_node() -> str:
+def qa_runner_node(config: tern_config.Config, tern_dir: pathlib.Path) -> str:
     return ""

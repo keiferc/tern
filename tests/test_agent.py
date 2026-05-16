@@ -7,7 +7,16 @@ import langchain.messages as lc_msg
 import langgraph.graph as lg_graph
 
 import tern.agent as agent
+import tern.config as tern_config
 import tern.subagents as tern_subagents
+
+
+def make_config() -> tern_config.Config:
+    return tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=[],
+        max_iterations={"default": 20},
+    )
 
 
 def make_state(**kwargs: T.Any) -> agent.AgentState:
@@ -22,6 +31,7 @@ def make_state(**kwargs: T.Any) -> agent.AgentState:
             "qa_output": None,
             "issues": [],
             "need_handoff": False,
+            "written_files": [],
             "messages": [],
             **kwargs,
         },
@@ -31,8 +41,8 @@ def make_state(**kwargs: T.Any) -> agent.AgentState:
 # ── graph ─────────────────────────────────────────────────────────────────
 
 
-def test_graph_compiles():
-    assert agent.build_agent() is not None
+def test_graph_compiles(tmp_path: pathlib.Path):
+    assert agent.build_agent(make_config(), tmp_path) is not None
 
 
 # ── route_from_user ───────────────────────────────────────────────────────
@@ -146,7 +156,7 @@ def test_route_checker_no_issues():
     assert agent.route_from_checker(state) == "user"
 
 
-# ── stub nodes ────────────────────────────────────────────────────────────
+# ── nodes ─────────────────────────────────────────────────────────────────
 
 
 def test_user_node_returns_empty_dict():
@@ -154,43 +164,65 @@ def test_user_node_returns_empty_dict():
     assert agent.user_node(state) == {}
 
 
-def test_planner_node_returns_plan_fields():
+def test_planner_node_returns_plan_fields(tmp_path: pathlib.Path):
     state = make_state(objective="build a model")
-    result = agent.planner_node(state)
+    result = agent.planner_node(state, make_config(), tmp_path)
     assert "plan" in result
     assert "plan_approved" in result
     assert result["plan_approved"] is None
 
 
-def test_maker_node_returns_empty_dict():
+def test_maker_node_returns_written_files(tmp_path: pathlib.Path):
     state = make_state(plan="step 1: do thing")
-    assert agent.maker_node(state) == {}
+    with unittest.mock.patch.object(
+        tern_subagents, "maker_subagent", return_value=["foo.py"]
+    ):
+        result = agent.maker_node(state, make_config(), tmp_path)
+    assert result == {"written_files": ["foo.py"]}
 
 
-def test_dep_check_graph_node_returns_new_deps():
+def test_dep_check_graph_node_returns_new_deps(tmp_path: pathlib.Path):
     state = make_state()
-    result = agent.dep_check_graph_node(state)
+    result = agent.dep_check_graph_node(state, make_config(), tmp_path)
     assert "new_deps" in result
     assert isinstance(result["new_deps"], list)
 
 
-def test_qa_runner_graph_node_returns_qa_output():
+def test_qa_runner_graph_node_returns_qa_output(tmp_path: pathlib.Path):
     state = make_state()
-    result = agent.qa_runner_graph_node(state)
+    result = agent.qa_runner_graph_node(state, make_config(), tmp_path)
     assert "qa_output" in result
     assert isinstance(result["qa_output"], str)
 
 
-def test_checker_graph_node_returns_issues():
-    state = make_state(qa_output="ruff: 0 errors")
-    result = agent.checker_graph_node(state)
+def test_checker_graph_node_returns_issues(tmp_path: pathlib.Path):
+    state = make_state(qa_output="ruff: 0 errors", written_files=[])
+    result = agent.checker_graph_node(state, make_config(), tmp_path)
     assert "issues" in result
     assert isinstance(result["issues"], list)
 
 
-def test_summarizer_graph_node_returns_empty_dict():
+def test_checker_graph_node_formats_written_files(tmp_path: pathlib.Path):
+    (tmp_path / "foo.py").write_text("x = 1")
+    state = make_state(qa_output="", written_files=[str(tmp_path / "foo.py")])
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ) as mock_checker:
+        agent.checker_graph_node(state, make_config(), tmp_path)
+    file_contents_arg = mock_checker.call_args[0][1]
+    assert "foo.py" in file_contents_arg
+    assert "x = 1" in file_contents_arg
+
+
+def test_checker_graph_node_skips_missing_files(tmp_path: pathlib.Path):
+    state = make_state(qa_output="", written_files=[str(tmp_path / "ghost.py")])
+    result = agent.checker_graph_node(state, make_config(), tmp_path)
+    assert result == {"issues": []}
+
+
+def test_summarizer_graph_node_returns_empty_dict(tmp_path: pathlib.Path):
     state = make_state()
-    assert agent.summarizer_graph_node(state) == {}
+    assert agent.summarizer_graph_node(state, make_config(), tmp_path) == {}
 
 
 def test_summarizer_graph_node_writes_handoff_doc(tmp_path: pathlib.Path):
@@ -199,14 +231,14 @@ def test_summarizer_graph_node_writes_handoff_doc(tmp_path: pathlib.Path):
         tern_subagents, "summarizer_subagent", return_value="# Handoff\n\nDone."
     ):
         with unittest.mock.patch("pathlib.Path.cwd", return_value=tmp_path):
-            agent.summarizer_graph_node(state)
+            agent.summarizer_graph_node(state, make_config(), tmp_path)
     assert (tmp_path / "HANDOFF.md").read_text() == "# Handoff\n\nDone."
 
 
 def test_summarizer_graph_node_skips_write_when_empty(tmp_path: pathlib.Path):
     state = make_state()
     with unittest.mock.patch("pathlib.Path.cwd", return_value=tmp_path):
-        agent.summarizer_graph_node(state)
+        agent.summarizer_graph_node(state, make_config(), tmp_path)
     assert not (tmp_path / "HANDOFF.md").exists()
 
 
