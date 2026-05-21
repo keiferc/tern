@@ -4,6 +4,21 @@ import tern.config as tern_config
 
 # ========================================================================= #
 #                                                                           #
+#                               Helpers                                     #
+#                                                                           #
+# ========================================================================= #
+
+
+def _build_system_prompt(tern_dir: pathlib.Path, agent: str) -> str:
+    constitution = (tern_dir / "CONSTITUTION.md").read_text()
+    override = tern_config.load_agent_prompt(tern_dir, agent)
+    if override:
+        return f"{constitution}\n\n{override}"
+    return constitution
+
+
+# ========================================================================= #
+#                                                                           #
 #                               Subagents                                   #
 #                                                                           #
 # ========================================================================= #
