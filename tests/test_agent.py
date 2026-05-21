@@ -166,8 +166,12 @@ def test_user_node_returns_empty_dict():
 
 def test_planner_node_returns_plan_fields(tmp_path: pathlib.Path):
     state = make_state(objective="build a model")
-    result = agent.planner_node(state, make_config(), tmp_path)
+    with unittest.mock.patch(
+        "tern.subagents.planner_subagent", return_value="step 1: do thing"
+    ):
+        result = agent.planner_node(state, make_config(), tmp_path)
     assert "plan" in result
+    assert result["plan"] == "step 1: do thing"
     assert "plan_approved" in result
     assert result["plan_approved"] is None
 

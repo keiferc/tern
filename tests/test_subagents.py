@@ -1,4 +1,7 @@
 import pathlib
+import unittest.mock
+
+import pytest
 
 import tern.config as tern_config
 import tern.subagents as subagents
@@ -10,6 +13,9 @@ import tern.subagents as subagents
 def _write_tern_dir(tmp_path: pathlib.Path, override: str = "") -> pathlib.Path:
     (tmp_path / "CONSTITUTION.md").write_text("# Constitution\nrule 1")
     (tmp_path / "planner.md").write_text(override)
+    (tmp_path / "maker.md").write_text("")
+    (tmp_path / "checker.md").write_text("")
+    (tmp_path / "summarizer.md").write_text("")
     return tmp_path
 
 
@@ -42,10 +48,142 @@ def make_config() -> tern_config.Config:
     )
 
 
-def test_planner_subagent_returns_str(tmp_path: pathlib.Path):
-    assert isinstance(
-        subagents.planner_subagent("build a model", make_config(), tmp_path), str
+# ── _extract_content ──────────────────────────────────────────────────────────
+
+
+def test_extract_content_str():
+    mock_resp = unittest.mock.MagicMock()
+    mock_resp.content = "Here is the plan"
+    assert subagents._extract_content(mock_resp) == "Here is the plan"
+
+
+def test_extract_content_list():
+    mock_resp = unittest.mock.MagicMock()
+    mock_resp.content = [{"text": "Hello"}, " world", {"text": "!"}]
+    assert subagents._extract_content(mock_resp) == "Hello world!"
+
+
+# ── tools ─────────────────────────────────────────────────────────────────────
+
+
+def test_read_file_reads_content(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "hello.py").write_text("print('hello')")
+    assert subagents.read_file.invoke({"path": "hello.py"}) == "print('hello')"
+
+
+def test_read_file_raises_outside_cwd(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="outside working directory"):
+        subagents.read_file.invoke({"path": "../outside.txt"})
+
+
+def test_list_files_lists_directory(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    subdir = tmp_path / "src"
+    subdir.mkdir()
+    (subdir / "a.py").write_text("")
+    (subdir / "b.py").write_text("")
+    result = subagents.list_files.invoke({"path": "src"})
+    assert "src/a.py" in result
+    assert "src/b.py" in result
+
+
+def test_list_files_raises_outside_cwd(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match="outside working directory"):
+        subagents.list_files.invoke({"path": "../outside"})
+
+
+# ── planner_subagent ──────────────────────────────────────────────────────────
+
+
+def _make_mock_model(responses: list[object]) -> unittest.mock.MagicMock:
+    mock_model = unittest.mock.MagicMock()
+    mock_model_with_tools = unittest.mock.MagicMock()
+    mock_model.bind_tools.return_value = mock_model_with_tools
+    mock_model_with_tools.invoke.side_effect = responses
+    return mock_model
+
+
+def _mock_response(
+    content: str, tool_calls: list | None = None
+) -> unittest.mock.MagicMock:
+    resp = unittest.mock.MagicMock()
+    resp.content = content
+    resp.tool_calls = tool_calls or []
+    return resp
+
+
+def test_planner_subagent_calls_get_model_with_planner(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("the plan")])
+    with unittest.mock.patch(
+        "tern.models.get_model", return_value=mock_model
+    ) as mock_get:
+        subagents.planner_subagent("build a classifier", make_config(), tmp_path)
+    mock_get.assert_called_once_with(make_config(), "planner")
+
+
+def test_planner_subagent_returns_str_on_no_tool_calls(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("Here is the plan")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        result = subagents.planner_subagent(
+            "build a classifier", make_config(), tmp_path
+        )
+    assert result == "Here is the plan"
+
+
+def test_planner_subagent_executes_tool_call_and_continues(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    _write_tern_dir(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "spec.txt").write_text("use pandas")
+
+    tool_resp = _mock_response(
+        content="",
+        tool_calls=[{"name": "read_file", "args": {"path": "spec.txt"}, "id": "tc1"}],
     )
+    final_resp = _mock_response("Final plan")
+    mock_model = _make_mock_model([tool_resp, final_resp])
+
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        result = subagents.planner_subagent(
+            "build a classifier", make_config(), tmp_path
+        )
+
+    assert result == "Final plan"
+    assert mock_model.bind_tools.return_value.invoke.call_count == 2
+
+
+def test_planner_subagent_stops_at_max_iterations(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    config = tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=[],
+        max_iterations={"default": 20, "planner": 2},
+    )
+    always_tool = _mock_response(
+        content="partial",
+        tool_calls=[{"name": "read_file", "args": {"path": "x.txt"}, "id": "tc1"}],
+    )
+    mock_model = _make_mock_model([always_tool, always_tool])
+
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        result = subagents.planner_subagent("build a classifier", config, tmp_path)
+
+    assert mock_model.bind_tools.return_value.invoke.call_count == 2
+    assert result == "partial"
 
 
 def test_maker_subagent_returns_list(tmp_path: pathlib.Path):
