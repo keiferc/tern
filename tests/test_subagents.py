@@ -190,9 +190,101 @@ def test_maker_subagent_returns_list(tmp_path: pathlib.Path):
     assert isinstance(subagents.maker_subagent("step 1", make_config(), tmp_path), list)
 
 
-def test_checker_subagent_returns_list(tmp_path: pathlib.Path):
-    result = subagents.checker_subagent("", "", make_config(), tmp_path)
-    assert isinstance(result, list)
+# ── checker_subagent ──────────────────────────────────────────────────────────
+
+
+def test_checker_subagent_calls_get_model_with_checker(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("")])
+    with unittest.mock.patch(
+        "tern.models.get_model", return_value=mock_model
+    ) as mock_get:
+        subagents.checker_subagent("", "", make_config(), tmp_path)
+    mock_get.assert_called_once_with(make_config(), "checker")
+
+
+def test_checker_subagent_empty_response_returns_empty_list(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        result = subagents.checker_subagent("", "", make_config(), tmp_path)
+    assert result == []
+
+
+def test_checker_subagent_multiline_response_parsed(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model(
+        [_mock_response("issue one\nissue two\n\nissue three")]
+    )
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        result = subagents.checker_subagent(
+            "ruff ok", "file content", make_config(), tmp_path
+        )
+    assert result == ["issue one", "issue two", "issue three"]
+
+
+def test_checker_subagent_blank_lines_filtered(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("\n\n  \nissue one\n  \n")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        result = subagents.checker_subagent("", "", make_config(), tmp_path)
+    assert result == ["issue one"]
+
+
+def test_checker_subagent_executes_tool_call_and_continues(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    _write_tern_dir(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "module.py").write_text("x = 1")
+
+    tool_resp = _mock_response(
+        content="",
+        tool_calls=[{"name": "read_file", "args": {"path": "module.py"}, "id": "tc1"}],
+    )
+    final_resp = _mock_response("issue one")
+    mock_model = _make_mock_model([tool_resp, final_resp])
+
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        result = subagents.checker_subagent("", "", make_config(), tmp_path)
+
+    assert result == ["issue one"]
+    assert mock_model.bind_tools.return_value.invoke.call_count == 2
+
+
+def test_checker_subagent_stops_at_max_iterations(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    config = tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=[],
+        max_iterations={"default": 20, "checker": 2},
+    )
+    always_tool = _mock_response(
+        content="",
+        tool_calls=[{"name": "read_file", "args": {"path": "x.txt"}, "id": "tc1"}],
+    )
+    mock_model = _make_mock_model([always_tool, always_tool])
+
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.checker_subagent("", "", config, tmp_path)
+
+    assert mock_model.bind_tools.return_value.invoke.call_count == 2
+
+
+def test_checker_subagent_human_message_contains_qa_and_files(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("")])
+
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.checker_subagent(
+            "ruff: all good", "=== foo.py ===\nx=1", make_config(), tmp_path
+        )
+
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    human_content = messages[1].content
+    assert "ruff: all good" in human_content
+    assert "=== foo.py ===" in human_content
+    assert "no preamble" in human_content
 
 
 def test_summarizer_subagent_returns_str(tmp_path: pathlib.Path):

@@ -3,7 +3,6 @@ import pathlib
 import typing as T
 import unittest.mock
 
-import langchain.messages as lc_msg
 import langgraph.graph as lg_graph
 
 import tern.agent as agent
@@ -185,25 +184,31 @@ def test_maker_node_returns_written_files(tmp_path: pathlib.Path):
     assert result == {"written_files": ["foo.py"]}
 
 
-def test_dep_check_graph_node_returns_new_deps(tmp_path: pathlib.Path):
+def test_dep_check_graph_node_wraps_subagent_result(tmp_path: pathlib.Path):
     state = make_state()
-    result = agent.dep_check_graph_node(state, make_config(), tmp_path)
-    assert "new_deps" in result
-    assert isinstance(result["new_deps"], list)
+    with unittest.mock.patch.object(
+        tern_subagents, "dep_check_node", return_value=["pandas"]
+    ):
+        result = agent.dep_check_graph_node(state, make_config(), tmp_path)
+    assert result == {"new_deps": ["pandas"]}
 
 
-def test_qa_runner_graph_node_returns_qa_output(tmp_path: pathlib.Path):
+def test_qa_runner_graph_node_wraps_subagent_result(tmp_path: pathlib.Path):
     state = make_state()
-    result = agent.qa_runner_graph_node(state, make_config(), tmp_path)
-    assert "qa_output" in result
-    assert isinstance(result["qa_output"], str)
+    with unittest.mock.patch.object(
+        tern_subagents, "qa_runner_node", return_value="ruff: 0 errors"
+    ):
+        result = agent.qa_runner_graph_node(state, make_config(), tmp_path)
+    assert result == {"qa_output": "ruff: 0 errors"}
 
 
-def test_checker_graph_node_returns_issues(tmp_path: pathlib.Path):
-    state = make_state(qa_output="ruff: 0 errors", written_files=[])
-    result = agent.checker_graph_node(state, make_config(), tmp_path)
-    assert "issues" in result
-    assert isinstance(result["issues"], list)
+def test_checker_graph_node_wraps_subagent_result(tmp_path: pathlib.Path):
+    state = make_state(qa_output="", written_files=[])
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=["unused import on line 3"]
+    ):
+        result = agent.checker_graph_node(state, make_config(), tmp_path)
+    assert result == {"issues": ["unused import on line 3"]}
 
 
 def test_checker_graph_node_formats_written_files(tmp_path: pathlib.Path):
@@ -220,7 +225,10 @@ def test_checker_graph_node_formats_written_files(tmp_path: pathlib.Path):
 
 def test_checker_graph_node_skips_missing_files(tmp_path: pathlib.Path):
     state = make_state(qa_output="", written_files=[str(tmp_path / "ghost.py")])
-    result = agent.checker_graph_node(state, make_config(), tmp_path)
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ):
+        result = agent.checker_graph_node(state, make_config(), tmp_path)
     assert result == {"issues": []}
 
 
@@ -247,15 +255,6 @@ def test_summarizer_graph_node_skips_write_when_empty(tmp_path: pathlib.Path):
 
 
 # ── messages accumulation ─────────────────────────────────────────────────
-
-
-def test_messages_accumulate_via_operator_add():
-    msgs_a = [lc_msg.HumanMessage(content="hello")]
-    msgs_b = [lc_msg.AIMessage(content="world")]
-    result = operator.add(msgs_a, msgs_b)
-    assert len(result) == 2
-    assert result[0].content == "hello"
-    assert result[1].content == "world"
 
 
 def test_messages_field_uses_add_reducer():

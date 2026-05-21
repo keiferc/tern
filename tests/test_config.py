@@ -272,7 +272,10 @@ def test_cmd_init_default_max_iterations(tmp_path: pathlib.Path, mock_sbx_ok):
         main.cmd_init(argparse.Namespace())
 
     cfg = config.load_config(tmp_path / ".tern")
-    assert "default" in cfg.max_iterations
+    template = yaml.safe_load(
+        importlib.resources.files(tern_templates).joinpath("config.yaml").read_bytes()
+    )
+    assert cfg.max_iterations == template["max_iterations"]
 
 
 def test_cmd_init_valid_spec_yaml(tmp_path: pathlib.Path, mock_sbx_ok):

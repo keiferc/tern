@@ -105,7 +105,7 @@ def planner_subagent(
 
         tool_calls = getattr(response, "tool_calls", [])
         if not tool_calls:
-            return _extract_content(response)
+            break
 
         for tool_call in tool_calls:
             tool = tool_map.get(tool_call["name"])
@@ -135,7 +135,56 @@ def checker_subagent(
     config: tern_config.Config,
     tern_dir: pathlib.Path,
 ) -> list[str]:
-    return []
+    tools = [web_fetch, read_file, list_files]
+    model = tern_models.get_model(config, "checker").bind_tools(tools)
+    tool_map = {t.name: t for t in tools}
+
+    human_message = (
+        "The following files were written by the maker. These are your primary review target.\n"
+        "Use tools only to read additional project files or verify documentation — "
+        "do not re-read files already provided here.\n"
+        "\n"
+        "## QA Tool Output\n"
+        f"{qa_output}\n"
+        "\n"
+        "## Written Files\n"
+        f"{file_contents}\n"
+        "\n"
+        "Report each issue on its own line. "
+        "Output only issues — no preamble, no summary, no explanation."
+    )
+
+    messages: list[object] = [
+        lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "checker")),
+        lc_msg.HumanMessage(content=human_message),
+    ]
+
+    max_iter = config.max_iterations.get("checker") or config.max_iterations["default"]
+    response: object = None
+
+    for _ in range(max_iter):
+        response = model.invoke(messages)  # ty: ignore[invalid-argument-type]
+        messages.append(response)
+
+        tool_calls = getattr(response, "tool_calls", [])
+        if not tool_calls:
+            break
+
+        for tool_call in tool_calls:
+            tool = tool_map.get(tool_call["name"])
+            if tool is None:
+                result = f"Error: unknown tool {tool_call['name']!r}"
+            else:
+                try:
+                    result = str(tool.invoke(tool_call["args"]))
+                except Exception as exc:
+                    result = f"Error: {exc}"
+            messages.append(
+                lc_msg.ToolMessage(content=result, tool_call_id=tool_call["id"])
+            )
+
+    content = _extract_content(response)
+    return [line for line in (ln.strip() for ln in content.splitlines()) if line]
 
 
 def summarizer_subagent(

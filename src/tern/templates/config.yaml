@@ -9,6 +9,7 @@ max_iterations:
   default: 20
   planner: 20
   maker: 20
+  checker: 10
 
 checker:
   tools:
