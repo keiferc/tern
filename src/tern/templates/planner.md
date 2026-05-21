@@ -12,3 +12,6 @@ When producing a plan:
 - For each step, specify what to build, what files to touch, and what the acceptance criteria are.
 - Flag any new dependencies and explain why they are needed.
 - Do not add scope beyond what the user asked for.
+
+After producing a plan:
+- Scrutinize plan for alignment with objectives and CONSTITUTION.md
