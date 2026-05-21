@@ -96,5 +96,8 @@ def load_agent_prompt(tern_dir: pathlib.Path, agent: str) -> str | None:
         )
 
     path = tern_dir / f"{agent}.md"
-    content = path.read_text()
+    try:
+        content = path.read_text()
+    except FileNotFoundError:
+        raise FileNotFoundError(f"agent prompt file not found for '{agent}': {path}")
     return content if content.strip() else None
