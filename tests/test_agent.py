@@ -175,6 +175,15 @@ def test_planner_node_returns_plan_fields(tmp_path: pathlib.Path):
     assert result["plan_approved"] is None
 
 
+def test_planner_node_passes_prior_plan_on_revision(tmp_path: pathlib.Path):
+    state = make_state(objective="build a model", plan="old plan")
+    with unittest.mock.patch(
+        "tern.subagents.planner_subagent", return_value="new plan"
+    ) as mock_planner:
+        agent.planner_node(state, make_config(), tmp_path)
+    assert mock_planner.call_args.kwargs.get("prior_plan") == "old plan"
+
+
 def test_maker_node_returns_written_files(tmp_path: pathlib.Path):
     state = make_state(plan="step 1: do thing")
     with unittest.mock.patch.object(

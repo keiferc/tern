@@ -43,7 +43,12 @@ def user_node(state: AgentState) -> dict:
 def planner_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
-    plan = tern_subagents.planner_subagent(state["objective"] or "", config, tern_dir)
+    plan = tern_subagents.planner_subagent(
+        state["objective"] or "",
+        config,
+        tern_dir,
+        prior_plan=state["plan"],
+    )
     return {"plan": plan, "plan_approved": None}
 
 

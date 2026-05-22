@@ -1,4 +1,5 @@
 import pathlib
+import typing as T
 import urllib.request
 
 import langchain.messages as lc_msg
@@ -15,7 +16,11 @@ import tern.models as tern_models
 
 
 def _build_system_prompt(tern_dir: pathlib.Path, agent: str) -> str:
-    constitution = (tern_dir / "CONSTITUTION.md").read_text()
+    path = tern_dir / "CONSTITUTION.md"
+    try:
+        constitution = path.read_text()
+    except FileNotFoundError:
+        raise FileNotFoundError(f"CONSTITUTION.md not found in tern directory: {path}")
     override = tern_config.load_agent_prompt(tern_dir, agent)
     if override:
         return f"{constitution}\n\n{override}"
@@ -23,10 +28,7 @@ def _build_system_prompt(tern_dir: pathlib.Path, agent: str) -> str:
 
 
 def _extract_content(response: object) -> str:
-    """
-    AIMessage.content is str (OpenAI) or list of blocks (Anthropic); normalise to str.
-
-    """
+    # AIMessage.content is str (OpenAI) or list of blocks (Anthropic); normalise to str.
     content = getattr(response, "content", "")
     if isinstance(content, str):
         return content
@@ -43,6 +45,39 @@ def _safe_resolve(path_str: str) -> pathlib.Path:
     except ValueError:
         raise ValueError(f"path outside working directory: {path_str!r}")
     return resolved
+
+
+def _react_loop(
+    model: T.Any,
+    tool_map: dict,
+    messages: list[object],
+    max_iter: int,
+    agent_name: str,
+) -> object:
+    response: object = None
+    for _ in range(max_iter):
+        response = model.invoke(messages)
+        messages.append(response)
+        tool_calls = getattr(response, "tool_calls", [])
+        if not tool_calls:
+            break
+        for tool_call in tool_calls:
+            tool = tool_map.get(tool_call["name"])
+            if tool is None:
+                result = f"Error: unknown tool {tool_call['name']!r}"
+            else:
+                try:
+                    result = str(tool.invoke(tool_call["args"]))
+                except Exception as exc:
+                    result = f"Error: {exc}"
+            messages.append(
+                lc_msg.ToolMessage(content=result, tool_call_id=tool_call["id"])
+            )
+    if response is None:
+        raise ValueError(
+            f"{agent_name} produced no response: max_iterations is {max_iter}"
+        )
+    return response
 
 
 # ========================================================================= #
@@ -85,41 +120,23 @@ def list_files(path: str) -> str:
 
 
 def planner_subagent(
-    objective: str, config: tern_config.Config, tern_dir: pathlib.Path
+    objective: str,
+    config: tern_config.Config,
+    tern_dir: pathlib.Path,
+    *,
+    prior_plan: str | None = None,
 ) -> str:
     tools = [web_fetch, read_file, list_files]
     model = tern_models.get_model(config, "planner").bind_tools(tools)
     tool_map = {t.name: t for t in tools}
-
     messages: list[object] = [
         lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "planner")),
         lc_msg.HumanMessage(content=objective),
     ]
-
+    if prior_plan:
+        messages.append(lc_msg.AIMessage(content=prior_plan))
     max_iter = config.max_iterations.get("planner") or config.max_iterations["default"]
-    response: object = None
-
-    for _ in range(max_iter):
-        response = model.invoke(messages)  # ty: ignore[invalid-argument-type]
-        messages.append(response)
-
-        tool_calls = getattr(response, "tool_calls", [])
-        if not tool_calls:
-            break
-
-        for tool_call in tool_calls:
-            tool = tool_map.get(tool_call["name"])
-            if tool is None:
-                result = f"Error: unknown tool {tool_call['name']!r}"
-            else:
-                try:
-                    result = str(tool.invoke(tool_call["args"]))
-                except Exception as exc:
-                    result = f"Error: {exc}"
-            messages.append(
-                lc_msg.ToolMessage(content=result, tool_call_id=tool_call["id"])
-            )
-
+    response = _react_loop(model, tool_map, messages, max_iter, "planner_subagent")
     return _extract_content(response)
 
 
@@ -158,31 +175,8 @@ def checker_subagent(
         lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "checker")),
         lc_msg.HumanMessage(content=human_message),
     ]
-
     max_iter = config.max_iterations.get("checker") or config.max_iterations["default"]
-    response: object = None
-
-    for _ in range(max_iter):
-        response = model.invoke(messages)  # ty: ignore[invalid-argument-type]
-        messages.append(response)
-
-        tool_calls = getattr(response, "tool_calls", [])
-        if not tool_calls:
-            break
-
-        for tool_call in tool_calls:
-            tool = tool_map.get(tool_call["name"])
-            if tool is None:
-                result = f"Error: unknown tool {tool_call['name']!r}"
-            else:
-                try:
-                    result = str(tool.invoke(tool_call["args"]))
-                except Exception as exc:
-                    result = f"Error: {exc}"
-            messages.append(
-                lc_msg.ToolMessage(content=result, tool_call_id=tool_call["id"])
-            )
-
+    response = _react_loop(model, tool_map, messages, max_iter, "checker_subagent")
     content = _extract_content(response)
     return [line for line in (ln.strip() for ln in content.splitlines()) if line]
 

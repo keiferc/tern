@@ -19,6 +19,11 @@ def _write_tern_dir(tmp_path: pathlib.Path, override: str = "") -> pathlib.Path:
     return tmp_path
 
 
+def test_build_system_prompt_missing_constitution_raises(tmp_path: pathlib.Path):
+    with pytest.raises(FileNotFoundError, match="CONSTITUTION.md"):
+        subagents._build_system_prompt(tmp_path, "planner")
+
+
 def test_build_system_prompt_constitution_only(tmp_path: pathlib.Path):
     tern_dir = _write_tern_dir(tmp_path, override="")
     result = subagents._build_system_prompt(tern_dir, "planner")
@@ -186,6 +191,34 @@ def test_planner_subagent_stops_at_max_iterations(tmp_path: pathlib.Path):
     assert result == "partial"
 
 
+def test_planner_subagent_includes_prior_plan_in_messages(tmp_path: pathlib.Path):
+    import langchain.messages as lc_msg
+
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("revised plan")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.planner_subagent(
+            "build a classifier", make_config(), tmp_path, prior_plan="old plan"
+        )
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    ai_msgs = [m for m in messages if isinstance(m, lc_msg.AIMessage)]
+    assert len(ai_msgs) == 1
+    assert ai_msgs[0].content == "old plan"
+
+
+def test_planner_subagent_raises_if_max_iterations_zero(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    config = tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=[],
+        max_iterations={"default": 0},
+    )
+    mock_model = _make_mock_model([])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        with pytest.raises(ValueError, match="max_iterations"):
+            subagents.planner_subagent("build a classifier", config, tmp_path)
+
+
 def test_maker_subagent_returns_list(tmp_path: pathlib.Path):
     assert isinstance(subagents.maker_subagent("step 1", make_config(), tmp_path), list)
 
@@ -269,6 +302,19 @@ def test_checker_subagent_stops_at_max_iterations(tmp_path: pathlib.Path):
         subagents.checker_subagent("", "", config, tmp_path)
 
     assert mock_model.bind_tools.return_value.invoke.call_count == 2
+
+
+def test_checker_subagent_raises_if_max_iterations_zero(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    config = tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=[],
+        max_iterations={"default": 0},
+    )
+    mock_model = _make_mock_model([])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        with pytest.raises(ValueError, match="max_iterations"):
+            subagents.checker_subagent("", "", config, tmp_path)
 
 
 def test_checker_subagent_human_message_contains_qa_and_files(tmp_path: pathlib.Path):

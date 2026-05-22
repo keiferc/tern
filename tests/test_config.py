@@ -133,6 +133,56 @@ def test_load_config_not_a_mapping_raises(tern_dir: pathlib.Path):
         config.load_config(tern_dir)
 
 
+def test_load_config_checker_tools_scalar_raises(tern_dir: pathlib.Path):
+    (tern_dir / "config.yaml").write_text(
+        yaml.dump(
+            {
+                "models": {"default": "anthropic:claude-sonnet-4-6"},
+                "checker": {"tools": "uv run ruff"},
+                "max_iterations": {"default": 20},
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="checker.tools must be a list"):
+        config.load_config(tern_dir)
+
+
+def test_load_config_checker_not_a_mapping_raises(tern_dir: pathlib.Path):
+    (tern_dir / "config.yaml").write_text(
+        yaml.dump(
+            {
+                "models": {"default": "anthropic:claude-sonnet-4-6"},
+                "checker": ["uv run ruff"],
+                "max_iterations": {"default": 20},
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="checker must be a mapping"):
+        config.load_config(tern_dir)
+
+
+def test_load_config_models_not_a_mapping_raises(tern_dir: pathlib.Path):
+    (tern_dir / "config.yaml").write_text(
+        yaml.dump({"models": ["anthropic:claude-sonnet-4-6"]})
+    )
+    with pytest.raises(ValueError, match="models must be a mapping"):
+        config.load_config(tern_dir)
+
+
+def test_load_config_max_iterations_not_a_mapping_raises(tern_dir: pathlib.Path):
+    (tern_dir / "config.yaml").write_text(
+        yaml.dump(
+            {
+                "models": {"default": "anthropic:claude-sonnet-4-6"},
+                "checker": {"tools": ["uv run pytest"]},
+                "max_iterations": [20],
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="max_iterations must be a mapping"):
+        config.load_config(tern_dir)
+
+
 # ========================================================================= #
 #                                                                           #
 #                           load_spec                                       #
@@ -184,6 +234,25 @@ def test_load_spec_null_network_defaults_empty(tern_dir: pathlib.Path):
 def test_load_spec_not_a_mapping_raises(tern_dir: pathlib.Path):
     (tern_dir / "spec.yaml").write_text("- item1\n")
     with pytest.raises(ValueError, match="mapping"):
+        config.load_spec(tern_dir)
+
+
+def test_load_spec_network_not_a_mapping_raises(tern_dir: pathlib.Path):
+    data = {"schemaVersion": "1", "kind": "mixin", "name": "tern", "network": ["item"]}
+    (tern_dir / "spec.yaml").write_text(yaml.dump(data))
+    with pytest.raises(ValueError, match="network must be a mapping"):
+        config.load_spec(tern_dir)
+
+
+def test_load_spec_allowed_domains_scalar_raises(tern_dir: pathlib.Path):
+    data = {
+        "schemaVersion": "1",
+        "kind": "mixin",
+        "name": "tern",
+        "network": {"allowedDomains": "api.anthropic.com:443"},
+    }
+    (tern_dir / "spec.yaml").write_text(yaml.dump(data))
+    with pytest.raises(ValueError, match="allowedDomains must be a list"):
         config.load_spec(tern_dir)
 
 
