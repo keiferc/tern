@@ -287,8 +287,96 @@ def test_checker_subagent_human_message_contains_qa_and_files(tmp_path: pathlib.
     assert "no preamble" in human_content
 
 
+def _make_mock_model_no_tools(responses: list[object]) -> unittest.mock.MagicMock:
+    mock_model = unittest.mock.MagicMock()
+    mock_model.invoke.side_effect = responses
+    return mock_model
+
+
+def test_summarizer_subagent_calls_get_model_with_summarizer(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    with unittest.mock.patch(
+        "tern.models.get_model", return_value=mock_model
+    ) as mock_get:
+        subagents.summarizer_subagent(
+            {"objective": "build a model", "messages": []}, make_config(), tmp_path
+        )
+    mock_get.assert_called_once_with(make_config(), "summarizer")
+
+
 def test_summarizer_subagent_returns_str(tmp_path: pathlib.Path):
-    assert isinstance(subagents.summarizer_subagent({}, make_config(), tmp_path), str)
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        result = subagents.summarizer_subagent(
+            {"objective": "build a model", "messages": []}, make_config(), tmp_path
+        )
+    assert isinstance(result, str)
+
+
+def test_summarizer_subagent_empty_state_returns_empty_without_calling_model(
+    tmp_path: pathlib.Path,
+):
+    with unittest.mock.patch("tern.models.get_model") as mock_get:
+        result = subagents.summarizer_subagent(
+            {"objective": None, "plan": None, "written_files": [], "messages": []},
+            make_config(),
+            tmp_path,
+        )
+    assert result == ""
+    mock_get.assert_not_called()
+
+
+def test_summarizer_subagent_includes_objective_in_prompt(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.summarizer_subagent(
+            {"objective": "build a classifier", "messages": []}, make_config(), tmp_path
+        )
+    human_content = mock_model.invoke.call_args[0][0][1].content
+    assert "build a classifier" in human_content
+
+
+def test_summarizer_subagent_includes_written_files_in_prompt(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.summarizer_subagent(
+            {"written_files": ["src/model.py"], "messages": []}, make_config(), tmp_path
+        )
+    human_content = mock_model.invoke.call_args[0][0][1].content
+    assert "src/model.py" in human_content
+
+
+def test_summarizer_subagent_filters_to_human_messages_only(tmp_path: pathlib.Path):
+    import langchain.messages as lc_msg
+
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    state = {
+        "objective": "build a model",
+        "messages": [
+            lc_msg.HumanMessage(content="user turn"),
+            lc_msg.AIMessage(content="<<AI_ONLY_SENTINEL>>"),
+        ],
+    }
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.summarizer_subagent(state, make_config(), tmp_path)
+    human_content = mock_model.invoke.call_args[0][0][1].content
+    assert "user turn" in human_content
+    assert "<<AI_ONLY_SENTINEL>>" not in human_content
+
+
+def test_summarizer_subagent_single_invocation(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.summarizer_subagent(
+            {"objective": "build a model", "messages": []}, make_config(), tmp_path
+        )
+    assert mock_model.invoke.call_count == 1
 
 
 def test_dep_check_node_returns_list(tmp_path: pathlib.Path):

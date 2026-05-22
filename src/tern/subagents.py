@@ -190,7 +190,32 @@ def checker_subagent(
 def summarizer_subagent(
     state: dict, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> str:
-    return ""
+    parts: list[str] = []
+
+    if state.get("objective"):
+        parts.append(f"## Objective\n{state['objective']}")
+    if state.get("plan"):
+        parts.append(f"## Plan\n{state['plan']}")
+    if state.get("written_files"):
+        parts.append("## Written Files\n" + "\n".join(state["written_files"]))
+
+    for msg in state.get("messages", []):
+        if isinstance(msg, lc_msg.HumanMessage):
+            text = _extract_content(msg)
+            if text:
+                parts.append(f"## User Message\n{text}")
+
+    context = "\n\n".join(parts)
+    if not context:
+        return ""
+
+    model = tern_models.get_model(config, "summarizer")
+    messages: list[object] = [
+        lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "summarizer")),
+        lc_msg.HumanMessage(content=context),
+    ]
+    response = model.invoke(messages)  # ty: ignore[invalid-argument-type]
+    return _extract_content(response)
 
 
 # ========================================================================= #
