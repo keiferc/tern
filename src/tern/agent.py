@@ -77,11 +77,14 @@ def checker_graph_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
     file_contents = ""
+    cwd = pathlib.Path.cwd().resolve()
     for path_str in state["written_files"]:
         try:
-            content = pathlib.Path(path_str).read_text()
+            resolved = pathlib.Path(path_str).resolve()
+            resolved.relative_to(cwd)
+            content = resolved.read_text()
             file_contents += f"=== {path_str} ===\n{content}\n"
-        except FileNotFoundError:
+        except FileNotFoundError, ValueError:
             pass
     issues = tern_subagents.checker_subagent(
         state["qa_output"] or "", file_contents, config, tern_dir
@@ -112,16 +115,17 @@ def route_from_user(state: AgentState) -> str:
     if state["plan_approved"] is not True:
         return "planner"
 
-    # Cycle complete: full pipeline ran with no issues.
-    # TODO: REPL must clear qa_output/issues/deps_approved when starting a
-    # new objective so stale state from the previous cycle does not trigger this.
-    if state["qa_output"] is not None and not state["issues"]:
+    if (
+        state["qa_output"] is not None
+        and not state["issues"]
+        and not (state["new_deps"] and state["deps_approved"] is None)
+    ):
         return "user"
 
     if state["new_deps"] and state["deps_approved"] is None:
         return "user"
 
-    if state["deps_approved"] is True:
+    if state["new_deps"] and state["deps_approved"] is True:
         return "qa_runner"
 
     # deps_approved=False: user rejected the proposed deps; send maker back

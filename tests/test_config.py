@@ -67,9 +67,30 @@ def test_load_config_valid(tern_dir: pathlib.Path, valid_config_yaml: pathlib.Pa
     assert cfg.max_iterations["planner"] == 10
 
 
+@pytest.mark.parametrize("missing_section", ["models", "checker", "max_iterations"])
+def test_load_config_missing_required_section_raises(
+    tern_dir: pathlib.Path, missing_section: str
+):
+    data = {
+        "models": {"default": "anthropic:claude-sonnet-4-6"},
+        "checker": {"tools": []},
+        "max_iterations": {"default": 20},
+    }
+    del data[missing_section]
+    (tern_dir / "config.yaml").write_text(yaml.dump(data))
+    with pytest.raises(ValueError, match=f"required section: {missing_section}"):
+        config.load_config(tern_dir)
+
+
 def test_load_config_missing_default_raises(tern_dir: pathlib.Path):
     (tern_dir / "config.yaml").write_text(
-        yaml.dump({"models": {"maker": "openai:gpt-4o"}})
+        yaml.dump(
+            {
+                "models": {"maker": "openai:gpt-4o"},
+                "checker": {"tools": []},
+                "max_iterations": {"default": 20},
+            }
+        )
     )
     with pytest.raises(ValueError, match="models.default"):
         config.load_config(tern_dir)
@@ -77,7 +98,13 @@ def test_load_config_missing_default_raises(tern_dir: pathlib.Path):
 
 def test_load_config_missing_checker_tools_raises(tern_dir: pathlib.Path):
     (tern_dir / "config.yaml").write_text(
-        yaml.dump({"models": {"default": "anthropic:claude-sonnet-4-6"}})
+        yaml.dump(
+            {
+                "models": {"default": "anthropic:claude-sonnet-4-6"},
+                "checker": {},
+                "max_iterations": {"default": 20},
+            }
+        )
     )
     with pytest.raises(ValueError, match="checker.tools"):
         config.load_config(tern_dir)
@@ -107,23 +134,29 @@ def test_load_config_null_max_iterations_raises(tern_dir: pathlib.Path):
             }
         )
     )
-    with pytest.raises(ValueError, match="max_iterations.default"):
+    with pytest.raises(ValueError, match="max_iterations must be a mapping"):
         config.load_config(tern_dir)
 
 
 def test_load_config_null_models_raises(tern_dir: pathlib.Path):
-    (tern_dir / "config.yaml").write_text("models:\n")
-    with pytest.raises(ValueError, match="models.default"):
+    (tern_dir / "config.yaml").write_text(
+        "models:\nchecker:\n  tools: []\nmax_iterations:\n  default: 20\n"
+    )
+    with pytest.raises(ValueError, match="models must be a mapping"):
         config.load_config(tern_dir)
 
 
 def test_load_config_null_checker_raises(tern_dir: pathlib.Path):
     (tern_dir / "config.yaml").write_text(
         yaml.dump(
-            {"models": {"default": "anthropic:claude-sonnet-4-6"}, "checker": None}
+            {
+                "models": {"default": "anthropic:claude-sonnet-4-6"},
+                "checker": None,
+                "max_iterations": {"default": 20},
+            }
         )
     )
-    with pytest.raises(ValueError, match="checker.tools"):
+    with pytest.raises(ValueError, match="checker must be a mapping"):
         config.load_config(tern_dir)
 
 
@@ -163,7 +196,13 @@ def test_load_config_checker_not_a_mapping_raises(tern_dir: pathlib.Path):
 
 def test_load_config_models_not_a_mapping_raises(tern_dir: pathlib.Path):
     (tern_dir / "config.yaml").write_text(
-        yaml.dump({"models": ["anthropic:claude-sonnet-4-6"]})
+        yaml.dump(
+            {
+                "models": ["anthropic:claude-sonnet-4-6"],
+                "checker": {"tools": []},
+                "max_iterations": {"default": 20},
+            }
+        )
     )
     with pytest.raises(ValueError, match="models must be a mapping"):
         config.load_config(tern_dir)

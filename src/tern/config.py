@@ -40,26 +40,23 @@ class Spec:
 # ========================================================================= #
 
 
-def _require_mapping(raw: dict, key: str, label: str) -> dict:
-    value = raw.get(key)
-    if value is not None and not isinstance(value, dict):
+def _get_mapping(raw: dict, key: str, label: str, *, allow_null: bool = False) -> dict:
+    if key not in raw:
+        return {}
+    value = raw[key]
+    if value is None and allow_null:
+        return {}
+    if not isinstance(value, dict):
         raise ValueError(f"{label} must be a mapping, got {type(value).__name__}")
-    return value or {}
-
-
-def _require_list(d: dict, key: str, label: str) -> list:
-    value = d.get(key)
-    if value is None:
-        raise ValueError(f"missing required field: {label}")
-    if not isinstance(value, list):
-        raise ValueError(f"{label} must be a list, got {type(value).__name__}")
     return value
 
 
-def _optional_list(d: dict, key: str, label: str) -> list:
+def _get_list(d: dict, key: str, label: str, *, allow_null: bool = False) -> list:
     value = d.get(key)
     if value is None:
-        return []
+        if allow_null:
+            return []
+        raise ValueError(f"missing required field: {label}")
     if not isinstance(value, list):
         raise ValueError(f"{label} must be a list, got {type(value).__name__}")
     return value
@@ -75,16 +72,18 @@ def load_config(tern_dir: pathlib.Path) -> Config:
             f"config.yaml must be a YAML mapping, got {type(raw).__name__}"
         )
 
-    models = _require_mapping(raw, "models", "config.yaml models")
+    for section in ("models", "checker", "max_iterations"):
+        if section not in raw:
+            raise ValueError(f"config.yaml missing required section: {section}")
+
+    models = _get_mapping(raw, "models", "config.yaml models")
     if "default" not in models:
         raise ValueError("config.yaml missing required field: models.default")
 
-    checker = _require_mapping(raw, "checker", "config.yaml checker")
-    checker_tools = _require_list(checker, "tools", "config.yaml checker.tools")
+    checker = _get_mapping(raw, "checker", "config.yaml checker")
+    checker_tools = _get_list(checker, "tools", "config.yaml checker.tools")
 
-    max_iterations = _require_mapping(
-        raw, "max_iterations", "config.yaml max_iterations"
-    )
+    max_iterations = _get_mapping(raw, "max_iterations", "config.yaml max_iterations")
     if "default" not in max_iterations:
         raise ValueError("config.yaml missing required field: max_iterations.default")
 
@@ -105,9 +104,9 @@ def load_spec(tern_dir: pathlib.Path) -> Spec:
         if field not in raw:
             raise ValueError(f"spec.yaml missing required field: {field}")
 
-    network = _require_mapping(raw, "network", "spec.yaml network")
-    allowed_domains = _optional_list(
-        network, "allowedDomains", "spec.yaml network.allowedDomains"
+    network = _get_mapping(raw, "network", "spec.yaml network", allow_null=True)
+    allowed_domains = _get_list(
+        network, "allowedDomains", "spec.yaml network.allowedDomains", allow_null=True
     )
 
     return Spec(

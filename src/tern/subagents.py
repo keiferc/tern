@@ -1,5 +1,7 @@
+import fnmatch
 import pathlib
 import typing as T
+import urllib.parse
 import urllib.request
 
 import langchain.messages as lc_msg
@@ -84,6 +86,23 @@ def _react_loop(
     return response
 
 
+_SENSITIVE_FILE_ALLOWLIST = frozenset({".env.example"})
+_SENSITIVE_FILE_PATTERNS = (
+    "*.env*",
+    "*.key",
+    "*.pem",
+    "*.p12",
+    "*.pfx",
+    "id_rsa*",
+    "id_ed25519*",
+    "id_ecdsa*",
+    "id_dsa*",
+    "*credentials*",
+    "*secret*",
+    "*_token*",
+)
+
+
 # ========================================================================= #
 #                                                                           #
 #                               Tools                                       #
@@ -94,9 +113,15 @@ def _react_loop(
 @lc_tools.tool
 def web_fetch(url: str) -> str:
     """Fetch the text content of a URL."""
+    scheme = urllib.parse.urlparse(url).scheme
+    if scheme not in ("http", "https"):
+        return f"Error: web_fetch only supports http/https, got scheme {scheme!r}"
     try:
-        with urllib.request.urlopen(url) as resp:  # noqa: S310
-            return resp.read().decode("utf-8", errors="replace")
+        with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310
+            text = resp.read().decode("utf-8", errors="replace")
+            if len(text) > 20000:
+                return text[:20000] + "\n[... truncated]"
+            return text
     except Exception as exc:
         return f"Error fetching {url!r}: {exc}"
 
@@ -104,7 +129,13 @@ def web_fetch(url: str) -> str:
 @lc_tools.tool
 def read_file(path: str) -> str:
     """Read a file within the project working directory and return its content."""
-    return _safe_resolve(path).read_text()
+    resolved = _safe_resolve(path)
+    name = resolved.name
+    if name not in _SENSITIVE_FILE_ALLOWLIST and any(
+        fnmatch.fnmatch(name, pat) for pat in _SENSITIVE_FILE_PATTERNS
+    ):
+        raise ValueError(f"read_file: {name!r} matches a sensitive-file pattern")
+    return resolved.read_text()
 
 
 @lc_tools.tool
@@ -139,7 +170,8 @@ def planner_subagent(
     ]
     if prior_plan:
         messages.append(lc_msg.AIMessage(content=prior_plan))
-    max_iter = config.max_iterations.get("planner") or config.max_iterations["default"]
+    _val = config.max_iterations.get("planner")
+    max_iter = config.max_iterations["default"] if _val is None else _val
     response = _react_loop(model, tool_map, messages, max_iter, "planner_subagent")
     return _extract_content(response)
 
@@ -179,7 +211,8 @@ def checker_subagent(
         lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "checker")),
         lc_msg.HumanMessage(content=human_message),
     ]
-    max_iter = config.max_iterations.get("checker") or config.max_iterations["default"]
+    _val = config.max_iterations.get("checker")
+    max_iter = config.max_iterations["default"] if _val is None else _val
     response = _react_loop(model, tool_map, messages, max_iter, "checker_subagent")
     content = _extract_content(response)
     return [line for line in (ln.strip() for ln in content.splitlines()) if line]

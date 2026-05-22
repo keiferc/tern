@@ -4,6 +4,7 @@ import typing as T
 import unittest.mock
 
 import langgraph.graph as lg_graph
+import pytest
 
 import tern.agent as agent
 import tern.config as tern_config
@@ -79,6 +80,20 @@ def test_route_user_stale_qa_output_plan_not_approved():
     assert agent.route_from_user(state) == "planner"
 
 
+def test_route_user_stale_qa_output_pending_deps_routes_to_user():
+    # cycle-complete check must not fire when deps are awaiting approval,
+    # even if qa_output is set from a prior cycle.
+    state = make_state(
+        objective="build a model",
+        plan_approved=True,
+        qa_output="all tests passed",
+        issues=[],
+        new_deps=["pandas"],
+        deps_approved=None,
+    )
+    assert agent.route_from_user(state) == "user"
+
+
 def test_route_user_plan_not_yet_approved():
     state = make_state(objective="build a model", plan_approved=None)
     assert agent.route_from_user(state) == "planner"
@@ -115,6 +130,17 @@ def test_route_user_deps_rejected():
         plan_approved=True,
         new_deps=["pandas"],
         deps_approved=False,
+    )
+    assert agent.route_from_user(state) == "maker"
+
+
+def test_route_user_stale_deps_approved_routes_to_maker():
+    state = make_state(
+        objective="build a model",
+        plan_approved=True,
+        new_deps=[],
+        deps_approved=True,
+        qa_output=None,
     )
     assert agent.route_from_user(state) == "maker"
 
@@ -220,7 +246,10 @@ def test_checker_graph_node_wraps_subagent_result(tmp_path: pathlib.Path):
     assert result == {"issues": ["unused import on line 3"]}
 
 
-def test_checker_graph_node_formats_written_files(tmp_path: pathlib.Path):
+def test_checker_graph_node_formats_written_files(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
     (tmp_path / "foo.py").write_text("x = 1")
     state = make_state(qa_output="", written_files=[str(tmp_path / "foo.py")])
     with unittest.mock.patch.object(
@@ -232,8 +261,24 @@ def test_checker_graph_node_formats_written_files(tmp_path: pathlib.Path):
     assert "x = 1" in file_contents_arg
 
 
-def test_checker_graph_node_skips_missing_files(tmp_path: pathlib.Path):
+def test_checker_graph_node_skips_missing_files(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
     state = make_state(qa_output="", written_files=[str(tmp_path / "ghost.py")])
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ):
+        result = agent.checker_graph_node(state, make_config(), tmp_path)
+    assert result == {"issues": []}
+
+
+def test_checker_graph_node_silently_skips_path_outside_cwd(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    outside = tmp_path.parent / "outside.py"
+    state = make_state(qa_output="", written_files=[str(outside)])
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=[]
     ):

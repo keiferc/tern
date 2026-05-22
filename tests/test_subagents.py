@@ -220,6 +220,21 @@ def test_planner_subagent_raises_if_max_iterations_zero(tmp_path: pathlib.Path):
             subagents.planner_subagent("build a classifier", config, tmp_path)
 
 
+def test_planner_subagent_raises_if_per_agent_max_iterations_zero(
+    tmp_path: pathlib.Path,
+):
+    _write_tern_dir(tmp_path)
+    config = tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=[],
+        max_iterations={"default": 20, "planner": 0},
+    )
+    mock_model = _make_mock_model([])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        with pytest.raises(ValueError, match="max_iterations"):
+            subagents.planner_subagent("build a classifier", config, tmp_path)
+
+
 def test_maker_subagent_returns_list(tmp_path: pathlib.Path):
     assert isinstance(subagents.maker_subagent("step 1", make_config(), tmp_path), list)
 
@@ -314,6 +329,21 @@ def test_checker_subagent_raises_if_max_iterations_zero(tmp_path: pathlib.Path):
         models={"default": "anthropic:claude-sonnet-4-6"},
         checker_tools=[],
         max_iterations={"default": 0},
+    )
+    mock_model = _make_mock_model([])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        with pytest.raises(ValueError, match="max_iterations"):
+            subagents.checker_subagent("", "", config, tmp_path)
+
+
+def test_checker_subagent_raises_if_per_agent_max_iterations_zero(
+    tmp_path: pathlib.Path,
+):
+    _write_tern_dir(tmp_path)
+    config = tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=[],
+        max_iterations={"default": 20, "checker": 0},
     )
     mock_model = _make_mock_model([])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
@@ -467,7 +497,80 @@ def test_react_loop_appends_error_for_unknown_tool():
     assert "unknown tool" in tool_messages[0].content
 
 
+# ── read_file sensitive-file blocklist ────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        ".env",
+        ".env.local",
+        "server.key",
+        "cert.pem",
+        "id_rsa",
+        "id_ed25519",
+        "id_ecdsa",
+        "id_dsa",
+        "aws_credentials",
+        "my_secret",
+        "access_token",
+    ],
+)
+def test_read_file_raises_for_sensitive_filename(
+    filename: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / filename).write_text("secret")
+    with pytest.raises(ValueError, match="sensitive-file pattern"):
+        subagents.read_file.invoke({"path": filename})
+
+
+def test_read_file_allows_env_example(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env.example").write_text("API_KEY=changeme")
+    result = subagents.read_file.invoke({"path": ".env.example"})
+    assert result == "API_KEY=changeme"
+
+
+def test_read_file_allows_tokenizer_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tokenizer.py").write_text("# tokenizer")
+    result = subagents.read_file.invoke({"path": "tokenizer.py"})
+    assert result == "# tokenizer"
+
+
 # ── web_fetch ─────────────────────────────────────────────────────────────────
+
+
+def test_web_fetch_rejects_file_scheme():
+    with unittest.mock.patch("urllib.request.urlopen") as mock_urlopen:
+        result = subagents.web_fetch.invoke({"url": "file:///etc/passwd"})
+    assert result.startswith("Error:")
+    assert "file" in result
+    mock_urlopen.assert_not_called()
+
+
+def test_web_fetch_rejects_ftp_scheme():
+    with unittest.mock.patch("urllib.request.urlopen") as mock_urlopen:
+        result = subagents.web_fetch.invoke({"url": "ftp://example.com/file"})
+    assert result.startswith("Error:")
+    assert "ftp" in result
+    mock_urlopen.assert_not_called()
+
+
+def test_web_fetch_passes_timeout_to_urlopen():
+    mock_resp = unittest.mock.MagicMock()
+    mock_resp.__enter__.return_value = mock_resp
+    mock_resp.read.return_value = b"hello"
+    with unittest.mock.patch(
+        "urllib.request.urlopen", return_value=mock_resp
+    ) as mock_open:
+        subagents.web_fetch.invoke({"url": "https://example.com"})
+    mock_open.assert_called_once_with("https://example.com", timeout=30)
 
 
 def test_web_fetch_returns_error_string_on_urlopen_failure():
@@ -477,6 +580,27 @@ def test_web_fetch_returns_error_string_on_urlopen_failure():
         result = subagents.web_fetch.invoke({"url": "https://example.com"})
     assert result.startswith("Error fetching")
     assert "connection refused" in result
+
+
+def test_web_fetch_truncates_long_response():
+    content = b"x" * 25000
+    mock_resp = unittest.mock.MagicMock()
+    mock_resp.__enter__.return_value = mock_resp
+    mock_resp.read.return_value = content
+    with unittest.mock.patch("urllib.request.urlopen", return_value=mock_resp):
+        result = subagents.web_fetch.invoke({"url": "https://example.com"})
+    assert result[:20000] == "x" * 20000
+    assert result.endswith("\n[... truncated]")
+
+
+def test_web_fetch_does_not_truncate_short_response():
+    content = b"hello world"
+    mock_resp = unittest.mock.MagicMock()
+    mock_resp.__enter__.return_value = mock_resp
+    mock_resp.read.return_value = content
+    with unittest.mock.patch("urllib.request.urlopen", return_value=mock_resp):
+        result = subagents.web_fetch.invoke({"url": "https://example.com"})
+    assert result == "hello world"
 
 
 # ── summarizer_subagent (coverage gaps) ──────────────────────────────────────
