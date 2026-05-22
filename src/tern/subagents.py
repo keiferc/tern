@@ -1,150 +1,11 @@
-import fnmatch
 import pathlib
 import typing as T
-import urllib.parse
-import urllib.request
 
 import langchain.messages as lc_msg
-import langchain_core.tools as lc_tools
 
 import tern.config as tern_config
 import tern.models as tern_models
-
-# ========================================================================= #
-#                                                                           #
-#                               Helpers                                     #
-#                                                                           #
-# ========================================================================= #
-
-
-def _build_system_prompt(tern_dir: pathlib.Path, agent: str) -> str:
-    path = tern_dir / "CONSTITUTION.md"
-    try:
-        constitution = path.read_text()
-    except FileNotFoundError:
-        raise FileNotFoundError(f"CONSTITUTION.md not found in tern directory: {path}")
-    override = tern_config.load_agent_prompt(tern_dir, agent)
-    if override:
-        return f"{constitution}\n\n{override}"
-    return constitution
-
-
-def _extract_content(response: object) -> str:
-    # AIMessage.content is str (OpenAI) or list of blocks (Anthropic); normalise to str.
-    content = getattr(response, "content", "")
-    if isinstance(content, str):
-        return content
-    return "".join(
-        block if isinstance(block, str) else block.get("text", "") for block in content
-    )
-
-
-def _safe_resolve(path_str: str) -> pathlib.Path:
-    cwd = pathlib.Path.cwd().resolve()
-    resolved = (cwd / path_str).resolve()
-    try:
-        resolved.relative_to(cwd)
-    except ValueError:
-        raise ValueError(f"path outside working directory: {path_str!r}")
-    return resolved
-
-
-def _react_loop(
-    model: T.Any,
-    tool_map: dict,
-    messages: list[object],
-    max_iter: int,
-    agent_name: str,
-) -> object:
-    response: object = None
-    for _ in range(max_iter):
-        response = model.invoke(messages)
-        messages.append(response)
-        tool_calls = getattr(response, "tool_calls", [])
-        if not tool_calls:
-            break
-        for tool_call in tool_calls:
-            tool = tool_map.get(tool_call["name"])
-            if tool is None:
-                result = f"Error: unknown tool {tool_call['name']!r}"
-            else:
-                try:
-                    result = str(tool.invoke(tool_call["args"]))
-                except Exception as exc:
-                    result = f"Error: {exc}"
-            messages.append(
-                lc_msg.ToolMessage(content=result, tool_call_id=tool_call["id"])
-            )
-    if response is None:
-        raise ValueError(
-            f"{agent_name} produced no response: max_iterations is {max_iter}"
-        )
-    if getattr(response, "tool_calls", []):
-        raise RuntimeError(
-            f"{agent_name}: max_iterations exhausted with pending tool calls"
-        )
-    return response
-
-
-_SENSITIVE_FILE_ALLOWLIST = frozenset({".env.example"})
-_SENSITIVE_FILE_PATTERNS = (
-    "*.env*",
-    "*.key",
-    "*.pem",
-    "*.p12",
-    "*.pfx",
-    "id_rsa*",
-    "id_ed25519*",
-    "id_ecdsa*",
-    "id_dsa*",
-    "*credentials*",
-    "*secret*",
-    "*_token*",
-)
-
-
-# ========================================================================= #
-#                                                                           #
-#                               Tools                                       #
-#                                                                           #
-# ========================================================================= #
-
-
-@lc_tools.tool
-def web_fetch(url: str) -> str:
-    """Fetch the text content of a URL."""
-    scheme = urllib.parse.urlparse(url).scheme
-    if scheme not in ("http", "https"):
-        return f"Error: web_fetch only supports http/https, got scheme {scheme!r}"
-    try:
-        with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310
-            text = resp.read().decode("utf-8", errors="replace")
-            if len(text) > 20000:
-                return text[:20000] + "\n[... truncated]"
-            return text
-    except Exception as exc:
-        return f"Error fetching {url!r}: {exc}"
-
-
-@lc_tools.tool
-def read_file(path: str) -> str:
-    """Read a file within the project working directory and return its content."""
-    resolved = _safe_resolve(path)
-    name = resolved.name
-    if name not in _SENSITIVE_FILE_ALLOWLIST and any(
-        fnmatch.fnmatch(name, pat) for pat in _SENSITIVE_FILE_PATTERNS
-    ):
-        raise ValueError(f"read_file: {name!r} matches a sensitive-file pattern")
-    return resolved.read_text()
-
-
-@lc_tools.tool
-def list_files(path: str) -> str:
-    """List files in a directory within the project working directory."""
-    cwd = pathlib.Path.cwd().resolve()
-    return "\n".join(
-        str(p.relative_to(cwd)) for p in sorted(_safe_resolve(path).iterdir())
-    )
+import tern.tools as tern_tools
 
 
 # ========================================================================= #
@@ -161,7 +22,7 @@ def planner_subagent(
     *,
     prior_plan: str | None = None,
 ) -> str:
-    tools = [web_fetch, read_file, list_files]
+    tools = [tern_tools.web_fetch, tern_tools.read_file, tern_tools.list_files]
     model = tern_models.get_model(config, "planner").bind_tools(tools)
     tool_map = {t.name: t for t in tools}
     messages: list[object] = [
@@ -188,7 +49,7 @@ def checker_subagent(
     config: tern_config.Config,
     tern_dir: pathlib.Path,
 ) -> list[str]:
-    tools = [web_fetch, read_file, list_files]
+    tools = [tern_tools.web_fetch, tern_tools.read_file, tern_tools.list_files]
     model = tern_models.get_model(config, "checker").bind_tools(tools)
     tool_map = {t.name: t for t in tools}
 
@@ -251,14 +112,65 @@ def summarizer_subagent(
 
 # ========================================================================= #
 #                                                                           #
-#                               Tool nodes                                  #
+#                               Helpers                                     #
 #                                                                           #
 # ========================================================================= #
 
 
-def dep_check_node(config: tern_config.Config, tern_dir: pathlib.Path) -> list[str]:
-    return []
+def _build_system_prompt(tern_dir: pathlib.Path, agent: str) -> str:
+    path = tern_dir / "CONSTITUTION.md"
+    try:
+        constitution = path.read_text()
+    except FileNotFoundError:
+        raise FileNotFoundError(f"CONSTITUTION.md not found in tern directory: {path}")
+    override = tern_config.load_agent_prompt(tern_dir, agent)
+    if override:
+        return f"{constitution}\n\n{override}"
+    return constitution
 
 
-def qa_runner_node(config: tern_config.Config, tern_dir: pathlib.Path) -> str:
-    return ""
+def _extract_content(response: object) -> str:
+    # AIMessage.content is str (OpenAI) or list of blocks (Anthropic); normalise to str.
+    content = getattr(response, "content", "")
+    if isinstance(content, str):
+        return content
+    return "".join(
+        block if isinstance(block, str) else block.get("text", "") for block in content
+    )
+
+
+def _react_loop(
+    model: T.Any,
+    tool_map: dict,
+    messages: list[object],
+    max_iter: int,
+    agent_name: str,
+) -> object:
+    response: object = None
+    for _ in range(max_iter):
+        response = model.invoke(messages)
+        messages.append(response)
+        tool_calls = getattr(response, "tool_calls", [])
+        if not tool_calls:
+            break
+        for tool_call in tool_calls:
+            tool = tool_map.get(tool_call["name"])
+            if tool is None:
+                result = f"Error: unknown tool {tool_call['name']!r}"
+            else:
+                try:
+                    result = str(tool.invoke(tool_call["args"]))
+                except Exception as exc:
+                    result = f"Error: {exc}"
+            messages.append(
+                lc_msg.ToolMessage(content=result, tool_call_id=tool_call["id"])
+            )
+    if response is None:
+        raise ValueError(
+            f"{agent_name} produced no response: max_iterations is {max_iter}"
+        )
+    if getattr(response, "tool_calls", []):
+        raise RuntimeError(
+            f"{agent_name}: max_iterations exhausted with pending tool calls"
+        )
+    return response

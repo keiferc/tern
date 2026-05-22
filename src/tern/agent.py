@@ -59,21 +59,19 @@ def maker_node(
     return {"written_files": files}
 
 
-def dep_check_graph_node(
+def dep_check_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
-    new_deps = tern_subagents.dep_check_node(config, tern_dir)
-    return {"new_deps": new_deps}
+    return {"new_deps": []}
 
 
-def qa_runner_graph_node(
+def qa_runner_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
-    qa_output = tern_subagents.qa_runner_node(config, tern_dir)
-    return {"qa_output": qa_output}
+    return {"qa_output": ""}
 
 
-def checker_graph_node(
+def checker_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
     file_contents = ""
@@ -92,7 +90,7 @@ def checker_graph_node(
     return {"issues": issues}
 
 
-def summarizer_graph_node(
+def summarizer_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
     doc = tern_subagents.summarizer_subagent(dict(state), config, tern_dir)
@@ -162,16 +160,10 @@ def build_agent(
     graph.add_node("user", user_node)
     graph.add_node("planner", lambda state: planner_node(state, config, tern_dir))
     graph.add_node("maker", lambda state: maker_node(state, config, tern_dir))
-    graph.add_node(
-        "dep_check", lambda state: dep_check_graph_node(state, config, tern_dir)
-    )
-    graph.add_node(
-        "qa_runner", lambda state: qa_runner_graph_node(state, config, tern_dir)
-    )
-    graph.add_node("checker", lambda state: checker_graph_node(state, config, tern_dir))
-    graph.add_node(
-        "summarizer", lambda state: summarizer_graph_node(state, config, tern_dir)
-    )
+    graph.add_node("dep_check", lambda state: dep_check_node(state, config, tern_dir))
+    graph.add_node("qa_runner", lambda state: qa_runner_node(state, config, tern_dir))
+    graph.add_node("checker", lambda state: checker_node(state, config, tern_dir))
+    graph.add_node("summarizer", lambda state: summarizer_node(state, config, tern_dir))
 
     graph.add_edge(lg_graph.START, "user")
     graph.add_conditional_edges("user", route_from_user)

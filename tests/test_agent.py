@@ -219,34 +219,28 @@ def test_maker_node_returns_written_files(tmp_path: pathlib.Path):
     assert result == {"written_files": ["foo.py"]}
 
 
-def test_dep_check_graph_node_wraps_subagent_result(tmp_path: pathlib.Path):
+def test_dep_check_node_returns_empty_list(tmp_path: pathlib.Path):
     state = make_state()
-    with unittest.mock.patch.object(
-        tern_subagents, "dep_check_node", return_value=["pandas"]
-    ):
-        result = agent.dep_check_graph_node(state, make_config(), tmp_path)
-    assert result == {"new_deps": ["pandas"]}
+    result = agent.dep_check_node(state, make_config(), tmp_path)
+    assert result == {"new_deps": []}
 
 
-def test_qa_runner_graph_node_wraps_subagent_result(tmp_path: pathlib.Path):
+def test_qa_runner_node_returns_empty_string(tmp_path: pathlib.Path):
     state = make_state()
-    with unittest.mock.patch.object(
-        tern_subagents, "qa_runner_node", return_value="ruff: 0 errors"
-    ):
-        result = agent.qa_runner_graph_node(state, make_config(), tmp_path)
-    assert result == {"qa_output": "ruff: 0 errors"}
+    result = agent.qa_runner_node(state, make_config(), tmp_path)
+    assert result == {"qa_output": ""}
 
 
-def test_checker_graph_node_wraps_subagent_result(tmp_path: pathlib.Path):
+def test_checker_node_wraps_subagent_result(tmp_path: pathlib.Path):
     state = make_state(qa_output="", written_files=[])
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=["unused import on line 3"]
     ):
-        result = agent.checker_graph_node(state, make_config(), tmp_path)
+        result = agent.checker_node(state, make_config(), tmp_path)
     assert result == {"issues": ["unused import on line 3"]}
 
 
-def test_checker_graph_node_formats_written_files(
+def test_checker_node_formats_written_files(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.chdir(tmp_path)
@@ -255,13 +249,13 @@ def test_checker_graph_node_formats_written_files(
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=[]
     ) as mock_checker:
-        agent.checker_graph_node(state, make_config(), tmp_path)
+        agent.checker_node(state, make_config(), tmp_path)
     file_contents_arg = mock_checker.call_args[0][1]
     assert "foo.py" in file_contents_arg
     assert "x = 1" in file_contents_arg
 
 
-def test_checker_graph_node_skips_missing_files(
+def test_checker_node_skips_missing_files(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.chdir(tmp_path)
@@ -269,11 +263,11 @@ def test_checker_graph_node_skips_missing_files(
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=[]
     ):
-        result = agent.checker_graph_node(state, make_config(), tmp_path)
+        result = agent.checker_node(state, make_config(), tmp_path)
     assert result == {"issues": []}
 
 
-def test_checker_graph_node_silently_skips_path_outside_cwd(
+def test_checker_node_silently_skips_path_outside_cwd(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.chdir(tmp_path)
@@ -282,29 +276,29 @@ def test_checker_graph_node_silently_skips_path_outside_cwd(
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=[]
     ):
-        result = agent.checker_graph_node(state, make_config(), tmp_path)
+        result = agent.checker_node(state, make_config(), tmp_path)
     assert result == {"issues": []}
 
 
-def test_summarizer_graph_node_returns_empty_dict(tmp_path: pathlib.Path):
+def test_summarizer_node_returns_empty_dict(tmp_path: pathlib.Path):
     state = make_state()
-    assert agent.summarizer_graph_node(state, make_config(), tmp_path) == {}
+    assert agent.summarizer_node(state, make_config(), tmp_path) == {}
 
 
-def test_summarizer_graph_node_writes_handoff_doc(tmp_path: pathlib.Path):
+def test_summarizer_node_writes_handoff_doc(tmp_path: pathlib.Path):
     state = make_state()
     with unittest.mock.patch.object(
         tern_subagents, "summarizer_subagent", return_value="# Handoff\n\nDone."
     ):
         with unittest.mock.patch("pathlib.Path.cwd", return_value=tmp_path):
-            agent.summarizer_graph_node(state, make_config(), tmp_path)
+            agent.summarizer_node(state, make_config(), tmp_path)
     assert (tmp_path / "HANDOFF.md").read_text() == "# Handoff\n\nDone."
 
 
-def test_summarizer_graph_node_skips_write_when_empty(tmp_path: pathlib.Path):
+def test_summarizer_node_skips_write_when_empty(tmp_path: pathlib.Path):
     state = make_state()
     with unittest.mock.patch("pathlib.Path.cwd", return_value=tmp_path):
-        agent.summarizer_graph_node(state, make_config(), tmp_path)
+        agent.summarizer_node(state, make_config(), tmp_path)
     assert not (tmp_path / "HANDOFF.md").exists()
 
 
