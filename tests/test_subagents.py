@@ -1,6 +1,7 @@
 import pathlib
 import unittest.mock
 
+import langchain.messages as lc_msg
 import pytest
 
 import tern.config as tern_config
@@ -171,7 +172,9 @@ def test_planner_subagent_executes_tool_call_and_continues(
     assert mock_model.bind_tools.return_value.invoke.call_count == 2
 
 
-def test_planner_subagent_stops_at_max_iterations(tmp_path: pathlib.Path):
+def test_planner_subagent_raises_on_max_iterations_exhausted_with_tool_calls(
+    tmp_path: pathlib.Path,
+):
     _write_tern_dir(tmp_path)
     config = tern_config.Config(
         models={"default": "anthropic:claude-sonnet-4-6"},
@@ -185,15 +188,13 @@ def test_planner_subagent_stops_at_max_iterations(tmp_path: pathlib.Path):
     mock_model = _make_mock_model([always_tool, always_tool])
 
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
-        result = subagents.planner_subagent("build a classifier", config, tmp_path)
+        with pytest.raises(RuntimeError, match="max_iterations exhausted"):
+            subagents.planner_subagent("build a classifier", config, tmp_path)
 
     assert mock_model.bind_tools.return_value.invoke.call_count == 2
-    assert result == "partial"
 
 
 def test_planner_subagent_includes_prior_plan_in_messages(tmp_path: pathlib.Path):
-    import langchain.messages as lc_msg
-
     _write_tern_dir(tmp_path)
     mock_model = _make_mock_model([_mock_response("revised plan")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
@@ -285,7 +286,9 @@ def test_checker_subagent_executes_tool_call_and_continues(
     assert mock_model.bind_tools.return_value.invoke.call_count == 2
 
 
-def test_checker_subagent_stops_at_max_iterations(tmp_path: pathlib.Path):
+def test_checker_subagent_raises_on_max_iterations_exhausted_with_tool_calls(
+    tmp_path: pathlib.Path,
+):
     _write_tern_dir(tmp_path)
     config = tern_config.Config(
         models={"default": "anthropic:claude-sonnet-4-6"},
@@ -299,7 +302,8 @@ def test_checker_subagent_stops_at_max_iterations(tmp_path: pathlib.Path):
     mock_model = _make_mock_model([always_tool, always_tool])
 
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
-        subagents.checker_subagent("", "", config, tmp_path)
+        with pytest.raises(RuntimeError, match="max_iterations exhausted"):
+            subagents.checker_subagent("", "", config, tmp_path)
 
     assert mock_model.bind_tools.return_value.invoke.call_count == 2
 
@@ -397,8 +401,6 @@ def test_summarizer_subagent_includes_written_files_in_prompt(tmp_path: pathlib.
 
 
 def test_summarizer_subagent_filters_to_human_messages_only(tmp_path: pathlib.Path):
-    import langchain.messages as lc_msg
-
     _write_tern_dir(tmp_path)
     mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
     state = {
@@ -431,3 +433,78 @@ def test_dep_check_node_returns_list(tmp_path: pathlib.Path):
 
 def test_qa_runner_node_returns_str(tmp_path: pathlib.Path):
     assert isinstance(subagents.qa_runner_node(make_config(), tmp_path), str)
+
+
+# ── _react_loop ───────────────────────────────────────────────────────────────
+
+
+def test_react_loop_raises_runtime_error_when_exhausted_with_pending_tool_calls():
+    always_tool = _mock_response(
+        content="partial",
+        tool_calls=[{"name": "some_tool", "args": {}, "id": "tc1"}],
+    )
+    mock_model = unittest.mock.MagicMock()
+    mock_model.invoke.side_effect = [always_tool, always_tool]
+
+    with pytest.raises(RuntimeError, match="max_iterations exhausted"):
+        subagents._react_loop(mock_model, {}, [unittest.mock.MagicMock()], 2, "agent")
+
+
+def test_react_loop_appends_error_for_unknown_tool():
+    tool_resp = _mock_response(
+        content="",
+        tool_calls=[{"name": "no_such_tool", "args": {}, "id": "tc1"}],
+    )
+    final_resp = _mock_response("done")
+    mock_model = unittest.mock.MagicMock()
+    mock_model.invoke.side_effect = [tool_resp, final_resp]
+    messages: list[object] = [unittest.mock.MagicMock()]
+
+    subagents._react_loop(mock_model, {}, messages, 3, "agent")
+
+    tool_messages = [m for m in messages if isinstance(m, lc_msg.ToolMessage)]
+    assert len(tool_messages) == 1
+    assert "unknown tool" in tool_messages[0].content
+
+
+# ── web_fetch ─────────────────────────────────────────────────────────────────
+
+
+def test_web_fetch_returns_error_string_on_urlopen_failure():
+    with unittest.mock.patch(
+        "urllib.request.urlopen", side_effect=OSError("connection refused")
+    ):
+        result = subagents.web_fetch.invoke({"url": "https://example.com"})
+    assert result.startswith("Error fetching")
+    assert "connection refused" in result
+
+
+# ── summarizer_subagent (coverage gaps) ──────────────────────────────────────
+
+
+def test_summarizer_subagent_skips_plan_section_when_plan_absent(
+    tmp_path: pathlib.Path,
+):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.summarizer_subagent(
+            {"objective": "build a model", "messages": []},
+            make_config(),
+            tmp_path,
+        )
+    human_content = mock_model.invoke.call_args[0][0][1].content
+    assert "## Plan" not in human_content
+
+
+def test_summarizer_subagent_skips_empty_human_message(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    state = {
+        "objective": "build a model",
+        "messages": [lc_msg.HumanMessage(content="")],
+    }
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.summarizer_subagent(state, make_config(), tmp_path)
+    human_content = mock_model.invoke.call_args[0][0][1].content
+    assert "## User Message" not in human_content

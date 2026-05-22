@@ -284,6 +284,13 @@ def test_load_agent_prompt_unknown_agent_raises(tern_dir: pathlib.Path):
         config.load_agent_prompt(tern_dir, "router")
 
 
+def test_load_agent_prompt_missing_file_raises_with_agent_name(
+    tern_dir: pathlib.Path,
+):
+    with pytest.raises(FileNotFoundError, match="planner"):
+        config.load_agent_prompt(tern_dir, "planner")
+
+
 # ========================================================================= #
 #                                                                           #
 #                           cmd_init                                        #

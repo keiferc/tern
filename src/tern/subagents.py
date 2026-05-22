@@ -77,6 +77,10 @@ def _react_loop(
         raise ValueError(
             f"{agent_name} produced no response: max_iterations is {max_iter}"
         )
+    if getattr(response, "tool_calls", []):
+        raise RuntimeError(
+            f"{agent_name}: max_iterations exhausted with pending tool calls"
+        )
     return response
 
 
