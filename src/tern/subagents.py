@@ -139,6 +139,25 @@ def _extract_content(response: object) -> str:
     )
 
 
+def _execute_tool_calls(
+    tool_map: dict,
+    tool_calls: list,
+    messages: list[object],
+) -> None:
+    for tool_call in tool_calls:
+        tool = tool_map.get(tool_call["name"])
+        if tool is None:
+            result = f"Error: unknown tool {tool_call['name']!r}"
+        else:
+            try:
+                result = str(tool.invoke(tool_call["args"]))
+            except Exception as exc:
+                result = f"Error: {exc}"
+        messages.append(
+            lc_msg.ToolMessage(content=result, tool_call_id=tool_call["id"])
+        )
+
+
 def _react_loop(
     model: T.Any,
     tool_map: dict,
@@ -153,18 +172,7 @@ def _react_loop(
         tool_calls = getattr(response, "tool_calls", [])
         if not tool_calls:
             break
-        for tool_call in tool_calls:
-            tool = tool_map.get(tool_call["name"])
-            if tool is None:
-                result = f"Error: unknown tool {tool_call['name']!r}"
-            else:
-                try:
-                    result = str(tool.invoke(tool_call["args"]))
-                except Exception as exc:
-                    result = f"Error: {exc}"
-            messages.append(
-                lc_msg.ToolMessage(content=result, tool_call_id=tool_call["id"])
-            )
+        _execute_tool_calls(tool_map, tool_calls, messages)
     if response is None:
         raise ValueError(
             f"{agent_name} produced no response: max_iterations is {max_iter}"

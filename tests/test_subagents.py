@@ -133,6 +133,49 @@ def test_list_files_raises_outside_cwd(
         tern_tools.list_files.invoke({"path": "../outside"})
 
 
+# ── _execute_tool_calls ───────────────────────────────────────────────────────
+
+
+def test_execute_tool_calls_appends_tool_result():
+    tool = unittest.mock.MagicMock()
+    tool.invoke.return_value = "result"
+    messages: list[object] = []
+    subagents._execute_tool_calls(
+        {"my_tool": tool},
+        [{"name": "my_tool", "args": {"x": 1}, "id": "tc1"}],
+        messages,
+    )
+    assert len(messages) == 1
+    assert isinstance(messages[0], lc_msg.ToolMessage)
+    assert messages[0].content == "result"
+
+
+def test_execute_tool_calls_appends_error_on_tool_exception():
+    tool = unittest.mock.MagicMock()
+    tool.invoke.side_effect = ValueError("disk full")
+    messages: list[object] = []
+    subagents._execute_tool_calls(
+        {"my_tool": tool},
+        [{"name": "my_tool", "args": {}, "id": "tc1"}],
+        messages,
+    )
+    assert len(messages) == 1
+    assert isinstance(messages[0], lc_msg.ToolMessage)
+    assert "disk full" in messages[0].content
+
+
+def test_execute_tool_calls_appends_error_for_unknown_tool():
+    messages: list[object] = []
+    subagents._execute_tool_calls(
+        {},
+        [{"name": "no_such_tool", "args": {}, "id": "tc1"}],
+        messages,
+    )
+    assert len(messages) == 1
+    assert isinstance(messages[0], lc_msg.ToolMessage)
+    assert "unknown tool" in messages[0].content
+
+
 # ── _react_loop ───────────────────────────────────────────────────────────────
 
 
