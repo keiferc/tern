@@ -86,6 +86,10 @@ def load_config(tern_dir: pathlib.Path) -> Config:
     max_iterations = _get_mapping(raw, "max_iterations", "config.yaml max_iterations")
     if "default" not in max_iterations:
         raise ValueError("config.yaml missing required field: max_iterations.default")
+    if "maker_checker_cycles" not in max_iterations:
+        raise ValueError(
+            "config.yaml missing required field: max_iterations.maker_checker_cycles"
+        )
 
     return Config(
         models=models, checker_tools=checker_tools, max_iterations=max_iterations

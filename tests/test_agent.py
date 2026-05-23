@@ -15,7 +15,7 @@ def make_config() -> tern_config.Config:
     return tern_config.Config(
         models={"default": "anthropic:claude-sonnet-4-6"},
         checker_tools=[],
-        max_iterations={"default": 20},
+        max_iterations={"default": 20, "maker_checker_cycles": 3},
     )
 
 
@@ -32,6 +32,8 @@ def make_state(**kwargs: T.Any) -> agent.AgentState:
             "issues": [],
             "need_handoff": False,
             "written_files": [],
+            "feedback": [],
+            "maker_checker_cycles": 0,
             "messages": [],
             **kwargs,
         },
@@ -172,12 +174,17 @@ def test_route_dep_check_no_new_deps():
 
 
 def test_route_checker_has_issues():
-    state = make_state(issues=["unused import on line 3"])
+    state = make_state(issues=["unused import on line 3"], plan_approved=True)
     assert agent.route_from_checker(state) == "maker"
 
 
 def test_route_checker_no_issues():
     state = make_state(issues=[])
+    assert agent.route_from_checker(state) == "user"
+
+
+def test_route_checker_issues_at_cycle_limit_routes_to_user():
+    state = make_state(issues=["unused import on line 3"], plan_approved=None)
     assert agent.route_from_checker(state) == "user"
 
 
@@ -195,10 +202,22 @@ def test_planner_node_returns_plan_fields(tmp_path: pathlib.Path):
         "tern.subagents.planner_subagent", return_value="step 1: do thing"
     ):
         result = agent.planner_node(state, make_config(), tmp_path)
-    assert "plan" in result
     assert result["plan"] == "step 1: do thing"
-    assert "plan_approved" in result
     assert result["plan_approved"] is None
+    assert result["issues"] == []
+    assert result["feedback"] == []
+    assert result["maker_checker_cycles"] == 0
+
+
+def test_planner_node_clears_issues(tmp_path: pathlib.Path):
+    state = make_state(
+        objective="build a model", issues=["stale issue from prior cycle"]
+    )
+    with unittest.mock.patch(
+        "tern.subagents.planner_subagent", return_value="new plan"
+    ):
+        result = agent.planner_node(state, make_config(), tmp_path)
+    assert result["issues"] == []
 
 
 def test_planner_node_passes_prior_plan_on_revision(tmp_path: pathlib.Path):
@@ -210,13 +229,20 @@ def test_planner_node_passes_prior_plan_on_revision(tmp_path: pathlib.Path):
     assert mock_planner.call_args.kwargs.get("prior_plan") == "old plan"
 
 
+def test_maker_node_increments_maker_checker_cycles(tmp_path: pathlib.Path):
+    state = make_state(plan="step 1: do thing", maker_checker_cycles=1)
+    with unittest.mock.patch.object(tern_subagents, "maker_subagent", return_value=[]):
+        result = agent.maker_node(state, make_config(), tmp_path)
+    assert result["maker_checker_cycles"] == 2
+
+
 def test_maker_node_returns_written_files(tmp_path: pathlib.Path):
     state = make_state(plan="step 1: do thing")
     with unittest.mock.patch.object(
         tern_subagents, "maker_subagent", return_value=["foo.py"]
     ):
         result = agent.maker_node(state, make_config(), tmp_path)
-    assert result == {"written_files": ["foo.py"]}
+    assert result == {"written_files": ["foo.py"], "maker_checker_cycles": 1}
 
 
 def test_dep_check_node_returns_empty_list(tmp_path: pathlib.Path):
@@ -237,7 +263,7 @@ def test_checker_node_wraps_subagent_result(tmp_path: pathlib.Path):
         tern_subagents, "checker_subagent", return_value=["unused import on line 3"]
     ):
         result = agent.checker_node(state, make_config(), tmp_path)
-    assert result == {"issues": ["unused import on line 3"]}
+    assert result == {"issues": ["unused import on line 3"], "feedback": []}
 
 
 def test_checker_node_formats_written_files(
@@ -264,7 +290,7 @@ def test_checker_node_skips_missing_files(
         tern_subagents, "checker_subagent", return_value=[]
     ):
         result = agent.checker_node(state, make_config(), tmp_path)
-    assert result == {"issues": []}
+    assert result == {"issues": [], "feedback": [], "maker_checker_cycles": 0}
 
 
 def test_checker_node_silently_skips_path_outside_cwd(
@@ -277,7 +303,7 @@ def test_checker_node_silently_skips_path_outside_cwd(
         tern_subagents, "checker_subagent", return_value=[]
     ):
         result = agent.checker_node(state, make_config(), tmp_path)
-    assert result == {"issues": []}
+    assert result == {"issues": [], "feedback": [], "maker_checker_cycles": 0}
 
 
 def test_summarizer_node_returns_empty_dict(tmp_path: pathlib.Path):
@@ -300,6 +326,108 @@ def test_summarizer_node_skips_write_when_empty(tmp_path: pathlib.Path):
     with unittest.mock.patch("pathlib.Path.cwd", return_value=tmp_path):
         agent.summarizer_node(state, make_config(), tmp_path)
     assert not (tmp_path / "HANDOFF.md").exists()
+
+
+# ── feedback field ────────────────────────────────────────────────────────
+
+
+def test_agent_state_feedback_field_has_no_reducer():
+    annotated_args = T.get_args(agent.AgentState.__annotations__["feedback"])
+    assert operator.add not in annotated_args
+
+
+def test_planner_node_clears_feedback_and_resets_cycles(tmp_path: pathlib.Path):
+    state = make_state(
+        objective="build a model", feedback=["fix imports"], maker_checker_cycles=2
+    )
+    with unittest.mock.patch(
+        "tern.subagents.planner_subagent", return_value="new plan"
+    ):
+        result = agent.planner_node(state, make_config(), tmp_path)
+    assert result["feedback"] == []
+    assert result["maker_checker_cycles"] == 0
+
+
+def test_planner_node_passes_feedback(tmp_path: pathlib.Path):
+    state = make_state(objective="build a model", feedback=["fix the imports"])
+    with unittest.mock.patch(
+        "tern.subagents.planner_subagent", return_value="new plan"
+    ) as mock_planner:
+        agent.planner_node(state, make_config(), tmp_path)
+    assert mock_planner.call_args.kwargs.get("feedback") == ["fix the imports"]
+
+
+def test_planner_node_passes_issues_to_planner_subagent(tmp_path: pathlib.Path):
+    state = make_state(objective="build a model", issues=["unused import on line 3"])
+    with unittest.mock.patch(
+        "tern.subagents.planner_subagent", return_value="new plan"
+    ) as mock_planner:
+        agent.planner_node(state, make_config(), tmp_path)
+    assert mock_planner.call_args.kwargs.get("issues") == ["unused import on line 3"]
+
+
+def test_checker_node_resets_cycles_on_clean_pass(tmp_path: pathlib.Path):
+    state = make_state(qa_output="", written_files=[], maker_checker_cycles=2)
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ):
+        result = agent.checker_node(state, make_config(), tmp_path)
+    assert result["maker_checker_cycles"] == 0
+
+
+def test_checker_node_resets_plan_approved_at_cycle_limit(tmp_path: pathlib.Path):
+    state = make_state(
+        qa_output="", written_files=[], plan_approved=True, maker_checker_cycles=3
+    )
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=["issue one"]
+    ):
+        result = agent.checker_node(state, make_config(), tmp_path)
+    assert result.get("plan_approved") is None
+
+
+def test_checker_node_does_not_reset_plan_approved_below_limit(tmp_path: pathlib.Path):
+    state = make_state(
+        qa_output="", written_files=[], plan_approved=True, maker_checker_cycles=2
+    )
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=["issue one"]
+    ):
+        result = agent.checker_node(state, make_config(), tmp_path)
+    assert "plan_approved" not in result
+
+
+def test_checker_node_clears_feedback_when_no_issues(tmp_path: pathlib.Path):
+    state = make_state(qa_output="", written_files=[], feedback=["fix imports"])
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ):
+        result = agent.checker_node(state, make_config(), tmp_path)
+    assert result.get("feedback") == []
+
+
+def test_checker_node_clears_feedback_when_issues_found(tmp_path: pathlib.Path):
+    state = make_state(qa_output="", written_files=[], feedback=["fix imports"])
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=["unused import on line 3"]
+    ):
+        result = agent.checker_node(state, make_config(), tmp_path)
+    assert result.get("feedback") == []
+
+
+def test_checker_node_clears_feedback_at_cycle_limit(tmp_path: pathlib.Path):
+    state = make_state(
+        qa_output="",
+        written_files=[],
+        feedback=["fix imports"],
+        plan_approved=True,
+        maker_checker_cycles=3,
+    )
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=["unused import on line 3"]
+    ):
+        result = agent.checker_node(state, make_config(), tmp_path)
+    assert result.get("feedback") == []
 
 
 # ── messages accumulation ─────────────────────────────────────────────────

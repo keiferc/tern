@@ -26,6 +26,8 @@ class AgentState(T.TypedDict):
     issues: list[str]
     need_handoff: bool
     written_files: list[str]
+    feedback: list[str]
+    maker_checker_cycles: int
     messages: T.Annotated[list[lc_msg.AnyMessage], operator.add]
 
 
@@ -48,15 +50,26 @@ def planner_node(
         config,
         tern_dir,
         prior_plan=state["plan"],
+        issues=state["issues"],
+        feedback=state["feedback"],
     )
-    return {"plan": plan, "plan_approved": None}
+    return {
+        "plan": plan,
+        "plan_approved": None,
+        "issues": [],
+        "feedback": [],
+        "maker_checker_cycles": 0,
+    }
 
 
 def maker_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
     files = tern_subagents.maker_subagent(state["plan"] or "", config, tern_dir)
-    return {"written_files": files}
+    return {
+        "written_files": files,
+        "maker_checker_cycles": state["maker_checker_cycles"] + 1,
+    }
 
 
 def dep_check_node(
@@ -87,7 +100,11 @@ def checker_node(
     issues = tern_subagents.checker_subagent(
         state["qa_output"] or "", file_contents, config, tern_dir
     )
-    return {"issues": issues}
+    if not issues:
+        return {"issues": [], "feedback": [], "maker_checker_cycles": 0}
+    if state["maker_checker_cycles"] >= config.max_iterations["maker_checker_cycles"]:
+        return {"issues": issues, "plan_approved": None, "feedback": []}
+    return {"issues": issues, "feedback": []}
 
 
 def summarizer_node(
@@ -139,6 +156,8 @@ def route_from_dep_check(state: AgentState) -> str:
 
 def route_from_checker(state: AgentState) -> str:
     if state["issues"]:
+        if state["plan_approved"] is None:
+            return "user"
         return "maker"
     return "user"
 

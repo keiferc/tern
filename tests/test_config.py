@@ -31,7 +31,7 @@ def valid_config_yaml(tern_dir: pathlib.Path) -> pathlib.Path:
     data = {
         "models": {"default": "anthropic:claude-sonnet-4-6", "maker": "openai:gpt-4o"},
         "checker": {"tools": ["uv run ruff check .", "uv run pytest"]},
-        "max_iterations": {"default": 20, "planner": 10},
+        "max_iterations": {"default": 20, "planner": 10, "maker_checker_cycles": 3},
     }
     path = tern_dir / "config.yaml"
     path.write_text(yaml.dump(data))
@@ -107,6 +107,20 @@ def test_load_config_missing_checker_tools_raises(tern_dir: pathlib.Path):
         )
     )
     with pytest.raises(ValueError, match="checker.tools"):
+        config.load_config(tern_dir)
+
+
+def test_load_config_missing_maker_checker_cycles_raises(tern_dir: pathlib.Path):
+    (tern_dir / "config.yaml").write_text(
+        yaml.dump(
+            {
+                "models": {"default": "anthropic:claude-sonnet-4-6"},
+                "checker": {"tools": ["uv run pytest"]},
+                "max_iterations": {"default": 20},
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="max_iterations.maker_checker_cycles"):
         config.load_config(tern_dir)
 
 

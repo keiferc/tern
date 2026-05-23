@@ -25,7 +25,7 @@ def make_config() -> tern_config.Config:
     return tern_config.Config(
         models={"default": "anthropic:claude-sonnet-4-6"},
         checker_tools=[],
-        max_iterations={"default": 20},
+        max_iterations={"default": 20, "maker_checker_cycles": 3},
     )
 
 
@@ -276,6 +276,113 @@ def test_planner_subagent_includes_prior_plan_in_messages(tmp_path: pathlib.Path
     ai_msgs = [m for m in messages if isinstance(m, lc_msg.AIMessage)]
     assert len(ai_msgs) == 1
     assert ai_msgs[0].content == "old plan"
+
+
+@pytest.mark.parametrize("feedback", [None, []], ids=["none", "empty"])
+def test_planner_subagent_omits_feedback_when_absent(
+    feedback: list | None, tmp_path: pathlib.Path
+):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("plan")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.planner_subagent(
+            "build a classifier", make_config(), tmp_path, feedback=feedback
+        )
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
+    assert not any("Prior Feedback" in m.content for m in human_msgs)
+
+
+def test_planner_subagent_includes_feedback_section(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("plan")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.planner_subagent(
+            "build a classifier",
+            make_config(),
+            tmp_path,
+            feedback=["fix the imports", "add type hints"],
+        )
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
+    feedback_msg = next(m for m in human_msgs if "Prior Feedback" in m.content)
+    assert "fix the imports" in feedback_msg.content
+    assert "add type hints" in feedback_msg.content
+
+
+def test_planner_subagent_message_order_with_prior_plan_and_feedback(
+    tmp_path: pathlib.Path,
+):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("plan")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.planner_subagent(
+            "build a classifier",
+            make_config(),
+            tmp_path,
+            prior_plan="old plan",
+            feedback=["fix the imports"],
+        )
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    assert isinstance(messages[0], lc_msg.SystemMessage)
+    assert isinstance(messages[1], lc_msg.HumanMessage)
+    assert isinstance(messages[2], lc_msg.AIMessage)
+    assert isinstance(messages[3], lc_msg.HumanMessage)
+    assert "Prior Feedback" in messages[3].content
+
+
+@pytest.mark.parametrize("issues", [None, []], ids=["none", "empty"])
+def test_planner_subagent_omits_issues_when_absent(
+    issues: list | None, tmp_path: pathlib.Path
+):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("plan")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.planner_subagent(
+            "build a classifier", make_config(), tmp_path, issues=issues
+        )
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    ai_msgs = [m for m in messages if isinstance(m, lc_msg.AIMessage)]
+    assert not any("Checker Issues" in m.content for m in ai_msgs)
+
+
+def test_planner_subagent_includes_checker_issues_section(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("plan")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.planner_subagent(
+            "build a classifier",
+            make_config(),
+            tmp_path,
+            issues=["unused import on line 3", "missing type hint on foo"],
+        )
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    ai_msgs = [m for m in messages if isinstance(m, lc_msg.AIMessage)]
+    issues_msg = next(m for m in ai_msgs if "Checker Issues" in m.content)
+    assert "unused import on line 3" in issues_msg.content
+    assert "missing type hint on foo" in issues_msg.content
+
+
+def test_planner_subagent_message_order_with_all_context(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("plan")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.planner_subagent(
+            "build a classifier",
+            make_config(),
+            tmp_path,
+            prior_plan="old plan",
+            issues=["unused import"],
+            feedback=["fix the imports"],
+        )
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    assert isinstance(messages[0], lc_msg.SystemMessage)
+    assert isinstance(messages[1], lc_msg.HumanMessage)  # objective
+    assert isinstance(messages[2], lc_msg.AIMessage)  # prior_plan
+    assert isinstance(messages[3], lc_msg.AIMessage)  # issues
+    assert "Checker Issues" in messages[3].content
+    assert isinstance(messages[4], lc_msg.HumanMessage)  # feedback
+    assert "Prior Feedback" in messages[4].content
 
 
 @pytest.mark.parametrize(

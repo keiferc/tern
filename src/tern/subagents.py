@@ -21,6 +21,8 @@ def planner_subagent(
     tern_dir: pathlib.Path,
     *,
     prior_plan: str | None = None,
+    issues: list[str] | None = None,
+    feedback: list[str] | None = None,
 ) -> str:
     tools = [tern_tools.web_fetch, tern_tools.read_file, tern_tools.list_files]
     model = tern_models.get_model(config, "planner").bind_tools(tools)
@@ -31,6 +33,16 @@ def planner_subagent(
     ]
     if prior_plan:
         messages.append(lc_msg.AIMessage(content=prior_plan))
+    if issues:
+        messages.append(
+            lc_msg.AIMessage(
+                content="## Checker Issues\n" + "\n".join(f"- {i}" for i in issues)
+            )
+        )
+    if feedback:
+        messages.append(
+            lc_msg.HumanMessage(content="## Prior Feedback\n" + "\n".join(feedback))
+        )
     _val = config.max_iterations.get("planner")
     max_iter = config.max_iterations["default"] if _val is None else _val
     response = _react_loop(model, tool_map, messages, max_iter, "planner_subagent")
