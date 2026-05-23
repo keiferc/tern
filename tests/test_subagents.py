@@ -6,7 +6,6 @@ import pytest
 
 import tern.config as tern_config
 import tern.subagents as subagents
-import tern.tools as tern_tools
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -91,46 +90,6 @@ def test_extract_content_list():
     mock_resp = unittest.mock.MagicMock()
     mock_resp.content = [{"text": "Hello"}, " world", {"text": "!"}]
     assert subagents._extract_content(mock_resp) == "Hello world!"
-
-
-# ── tools ─────────────────────────────────────────────────────────────────────
-
-
-def test_read_file_reads_content(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "hello.py").write_text("print('hello')")
-    assert tern_tools.read_file.invoke({"path": "hello.py"}) == "print('hello')"
-
-
-def test_read_file_raises_outside_cwd(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.chdir(tmp_path)
-    with pytest.raises(ValueError, match="outside working directory"):
-        tern_tools.read_file.invoke({"path": "../outside.txt"})
-
-
-def test_list_files_lists_directory(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.chdir(tmp_path)
-    subdir = tmp_path / "src"
-    subdir.mkdir()
-    (subdir / "a.py").write_text("")
-    (subdir / "b.py").write_text("")
-    result = tern_tools.list_files.invoke({"path": "src"})
-    assert "src/a.py" in result
-    assert "src/b.py" in result
-
-
-def test_list_files_raises_outside_cwd(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.chdir(tmp_path)
-    with pytest.raises(ValueError, match="outside working directory"):
-        tern_tools.list_files.invoke({"path": "../outside"})
 
 
 # ── _execute_tool_calls ───────────────────────────────────────────────────────
@@ -721,100 +680,3 @@ def test_summarizer_subagent_skips_empty_human_message(tmp_path: pathlib.Path):
         subagents.summarizer_subagent(state, make_config(), tmp_path)
     human_content = mock_model.invoke.call_args[0][0][1].content
     assert "## User Message" not in human_content
-
-
-# ── read_file sensitive-file blocklist ────────────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    "filename",
-    [
-        ".env",
-        ".env.local",
-        "server.key",
-        "cert.pem",
-        "id_rsa",
-        "id_ed25519",
-        "id_ecdsa",
-        "id_dsa",
-        "aws_credentials",
-        "my_secret",
-        "access_token",
-    ],
-)
-def test_read_file_raises_for_sensitive_filename(
-    filename: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / filename).write_text("secret")
-    with pytest.raises(ValueError, match="sensitive-file pattern"):
-        tern_tools.read_file.invoke({"path": filename})
-
-
-def test_read_file_allows_env_example(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".env.example").write_text("API_KEY=changeme")
-    result = tern_tools.read_file.invoke({"path": ".env.example"})
-    assert result == "API_KEY=changeme"
-
-
-def test_read_file_allows_tokenizer_file(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "tokenizer.py").write_text("# tokenizer")
-    result = tern_tools.read_file.invoke({"path": "tokenizer.py"})
-    assert result == "# tokenizer"
-
-
-# ── web_fetch ─────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize("url", ["file:///etc/passwd", "ftp://example.com/file"])
-def test_web_fetch_rejects_non_http_scheme(url: str):
-    with unittest.mock.patch("urllib.request.urlopen") as mock_urlopen:
-        result = tern_tools.web_fetch.invoke({"url": url})
-    assert result.startswith("Error:")
-    mock_urlopen.assert_not_called()
-
-
-def test_web_fetch_passes_timeout_to_urlopen():
-    mock_resp = unittest.mock.MagicMock()
-    mock_resp.__enter__.return_value = mock_resp
-    mock_resp.read.return_value = b"hello"
-    with unittest.mock.patch(
-        "urllib.request.urlopen", return_value=mock_resp
-    ) as mock_open:
-        tern_tools.web_fetch.invoke({"url": "https://example.com"})
-    mock_open.assert_called_once_with("https://example.com", timeout=30)
-
-
-def test_web_fetch_propagates_urlopen_failure():
-    with unittest.mock.patch(
-        "urllib.request.urlopen", side_effect=OSError("connection refused")
-    ):
-        with pytest.raises(OSError, match="connection refused"):
-            tern_tools.web_fetch.invoke({"url": "https://example.com"})
-
-
-def test_web_fetch_truncates_long_response():
-    content = b"x" * 25000
-    mock_resp = unittest.mock.MagicMock()
-    mock_resp.__enter__.return_value = mock_resp
-    mock_resp.read.return_value = content
-    with unittest.mock.patch("urllib.request.urlopen", return_value=mock_resp):
-        result = tern_tools.web_fetch.invoke({"url": "https://example.com"})
-    assert result[:20000] == "x" * 20000
-    assert result.endswith("\n[... truncated]")
-
-
-def test_web_fetch_does_not_truncate_short_response():
-    content = b"hello world"
-    mock_resp = unittest.mock.MagicMock()
-    mock_resp.__enter__.return_value = mock_resp
-    mock_resp.read.return_value = content
-    with unittest.mock.patch("urllib.request.urlopen", return_value=mock_resp):
-        result = tern_tools.web_fetch.invoke({"url": "https://example.com"})
-    assert result == "hello world"

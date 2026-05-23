@@ -99,9 +99,9 @@ def checker_node(
     for path_str in state["written_files"]:
         try:
             resolved = pathlib.Path(path_str).resolve()
-            resolved.relative_to(cwd)
+            rel = resolved.relative_to(cwd)
             content = resolved.read_text(encoding="utf-8")
-            file_contents += f"=== {resolved.relative_to(cwd)} ===\n{content}\n"
+            file_contents += f"=== {rel} ===\n{content}\n"
         except FileNotFoundError, ValueError:
             pass
     issues = tern_subagents.checker_subagent(
@@ -119,7 +119,7 @@ def summarizer_node(
 ) -> dict:
     doc = tern_subagents.summarizer_subagent(dict(state), config, tern_dir)
     if doc:
-        pathlib.Path.cwd().joinpath("HANDOFF.md").write_text(doc)
+        pathlib.Path.cwd().joinpath("HANDOFF.md").write_text(doc, encoding="utf-8")
     return {}
 
 

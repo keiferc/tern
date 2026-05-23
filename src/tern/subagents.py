@@ -116,8 +116,8 @@ def checker_subagent(
     else:
         preamble = "Review the QA output below for issues.\n"
     task_instruction = (
-        preamble + "\n"
-        "## QA Tool Output\n"
+        f"{preamble}\n"
+        f"## QA Tool Output\n"
         f"{qa_output}\n"
         "\n"
         "Report each issue on its own line. "
@@ -187,7 +187,7 @@ def _max_iter(config: tern_config.Config, agent: str) -> int:
 def _build_system_prompt(tern_dir: pathlib.Path, agent: str) -> str:
     path = tern_dir / "CONSTITUTION.md"
     try:
-        constitution = path.read_text()
+        constitution = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise FileNotFoundError(f"CONSTITUTION.md not found in tern directory: {path}")
     override = tern_config.load_agent_prompt(tern_dir, agent)
