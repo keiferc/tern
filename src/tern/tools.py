@@ -58,7 +58,7 @@ def read_file(path: str) -> str:
         fnmatch.fnmatch(name, pat) for pat in _SENSITIVE_FILE_PATTERNS
     ):
         raise ValueError(f"read_file: {name!r} matches a sensitive-file pattern")
-    return resolved.read_text()
+    return resolved.read_text(encoding="utf-8")
 
 
 @lc_tools.tool
@@ -68,6 +68,20 @@ def list_files(path: str) -> str:
     return "\n".join(
         str(p.relative_to(cwd)) for p in sorted(_safe_resolve(path).iterdir())
     )
+
+
+@lc_tools.tool
+def write_file(path: str, content: str) -> str:
+    """Write text content to a file at path, creating parent directories as needed. Returns the absolute path written."""
+    resolved = _safe_resolve(path)
+    name = resolved.name
+    if name not in _SENSITIVE_FILE_ALLOWLIST and any(
+        fnmatch.fnmatch(name, pat) for pat in _SENSITIVE_FILE_PATTERNS
+    ):
+        raise ValueError(f"write_file: {name!r} matches a sensitive-file pattern")
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    resolved.write_text(content, encoding="utf-8")
+    return str(resolved)
 
 
 # ========================================================================= #

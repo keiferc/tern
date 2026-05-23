@@ -55,8 +55,13 @@ def test_route_user_no_objective_no_handoff():
     assert agent.route_from_user(state) == lg_graph.END
 
 
-def test_route_user_no_objective_with_handoff():
+def test_route_user_no_objective_with_handoff_routes_to_end():
     state = make_state(objective=None, need_handoff=True)
+    assert agent.route_from_user(state) == lg_graph.END
+
+
+def test_route_user_with_objective_and_handoff_routes_to_summarizer():
+    state = make_state(objective="build a model", need_handoff=True)
     assert agent.route_from_user(state) == "summarizer"
 
 
@@ -220,13 +225,37 @@ def test_planner_node_clears_issues(tmp_path: pathlib.Path):
     assert result["issues"] == []
 
 
-def test_planner_node_passes_prior_plan_on_revision(tmp_path: pathlib.Path):
-    state = make_state(objective="build a model", plan="old plan")
+def test_planner_node_passes_context_to_planner_subagent(tmp_path: pathlib.Path):
+    state = make_state(
+        objective="build a model",
+        plan="old plan",
+        issues=["unused import"],
+        feedback=["fix imports"],
+    )
     with unittest.mock.patch(
         "tern.subagents.planner_subagent", return_value="new plan"
     ) as mock_planner:
         agent.planner_node(state, make_config(), tmp_path)
-    assert mock_planner.call_args.kwargs.get("prior_plan") == "old plan"
+    kwargs = mock_planner.call_args.kwargs
+    assert kwargs.get("prior_plan") == "old plan"
+    assert kwargs.get("issues") == ["unused import"]
+    assert kwargs.get("feedback") == ["fix imports"]
+
+
+def test_maker_node_passes_context_to_maker_subagent(tmp_path: pathlib.Path):
+    state = make_state(
+        objective="build a model",
+        plan="step 1",
+        issues=["unused import"],
+        feedback=["add type hints"],
+    )
+    with unittest.mock.patch.object(
+        tern_subagents, "maker_subagent", return_value=[]
+    ) as mock_maker:
+        agent.maker_node(state, make_config(), tmp_path)
+    assert mock_maker.call_args.args[0] == "build a model"
+    assert mock_maker.call_args.kwargs.get("issues") == ["unused import"]
+    assert mock_maker.call_args.kwargs.get("feedback") == ["add type hints"]
 
 
 def test_maker_node_increments_maker_checker_cycles(tmp_path: pathlib.Path):
@@ -346,24 +375,6 @@ def test_planner_node_clears_feedback_and_resets_cycles(tmp_path: pathlib.Path):
         result = agent.planner_node(state, make_config(), tmp_path)
     assert result["feedback"] == []
     assert result["maker_checker_cycles"] == 0
-
-
-def test_planner_node_passes_feedback(tmp_path: pathlib.Path):
-    state = make_state(objective="build a model", feedback=["fix the imports"])
-    with unittest.mock.patch(
-        "tern.subagents.planner_subagent", return_value="new plan"
-    ) as mock_planner:
-        agent.planner_node(state, make_config(), tmp_path)
-    assert mock_planner.call_args.kwargs.get("feedback") == ["fix the imports"]
-
-
-def test_planner_node_passes_issues_to_planner_subagent(tmp_path: pathlib.Path):
-    state = make_state(objective="build a model", issues=["unused import on line 3"])
-    with unittest.mock.patch(
-        "tern.subagents.planner_subagent", return_value="new plan"
-    ) as mock_planner:
-        agent.planner_node(state, make_config(), tmp_path)
-    assert mock_planner.call_args.kwargs.get("issues") == ["unused import on line 3"]
 
 
 def test_checker_node_resets_cycles_on_clean_pass(tmp_path: pathlib.Path):

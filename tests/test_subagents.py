@@ -408,8 +408,116 @@ def test_planner_subagent_raises_if_max_iterations_zero(
 # ── maker_subagent ────────────────────────────────────────────────────────────
 
 
-def test_maker_subagent_returns_list(tmp_path: pathlib.Path):
-    assert isinstance(subagents.maker_subagent("step 1", make_config(), tmp_path), list)
+def test_maker_subagent_returns_written_paths(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    _write_tern_dir(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    tool_resp = _mock_response(
+        content="",
+        tool_calls=[
+            {
+                "name": "write_file",
+                "args": {"path": "output.py", "content": "x = 1"},
+                "id": "tc1",
+            }
+        ],
+    )
+    final_resp = _mock_response("done")
+    mock_model = _make_mock_model([tool_resp, final_resp])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        result = subagents.maker_subagent(
+            "build a classifier", "step 1", make_config(), tmp_path
+        )
+    assert result == [str((tmp_path / "output.py").resolve())]
+    assert (tmp_path / "output.py").read_text() == "x = 1"
+
+
+def test_maker_subagent_includes_issues_section(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("done")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.maker_subagent(
+            "build a classifier",
+            "step 1",
+            make_config(),
+            tmp_path,
+            issues=["unused import on line 3"],
+        )
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    ai_msgs = [m for m in messages if isinstance(m, lc_msg.AIMessage)]
+    issues_msg = next(m for m in ai_msgs if "Checker Issues" in m.content)
+    assert "unused import on line 3" in issues_msg.content
+
+
+@pytest.mark.parametrize("issues", [None, []], ids=["none", "empty"])
+def test_maker_subagent_omits_issues_section_when_absent(
+    issues: list | None, tmp_path: pathlib.Path
+):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("done")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.maker_subagent(
+            "build a classifier", "step 1", make_config(), tmp_path, issues=issues
+        )
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    ai_msgs = [m for m in messages if isinstance(m, lc_msg.AIMessage)]
+    assert not any("Checker Issues" in m.content for m in ai_msgs)
+
+
+def test_maker_subagent_includes_feedback_section(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("done")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.maker_subagent(
+            "build a classifier",
+            "step 1",
+            make_config(),
+            tmp_path,
+            feedback=["add type hints", "avoid pandas"],
+        )
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
+    feedback_msg = next(m for m in human_msgs if "Prior Feedback" in m.content)
+    assert "add type hints" in feedback_msg.content
+    assert "avoid pandas" in feedback_msg.content
+
+
+@pytest.mark.parametrize("feedback", [None, []], ids=["none", "empty"])
+def test_maker_subagent_omits_feedback_section_when_absent(
+    feedback: list | None, tmp_path: pathlib.Path
+):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("done")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.maker_subagent(
+            "build a classifier", "step 1", make_config(), tmp_path, feedback=feedback
+        )
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
+    assert not any("Prior Feedback" in m.content for m in human_msgs)
+
+
+def test_maker_subagent_message_order_with_all_context(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("done")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.maker_subagent(
+            "build a classifier",
+            "step 1: build model",
+            make_config(),
+            tmp_path,
+            issues=["unused import"],
+            feedback=["add type hints"],
+        )
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    assert isinstance(messages[0], lc_msg.SystemMessage)
+    assert isinstance(messages[1], lc_msg.HumanMessage)  # objective
+    assert isinstance(messages[2], lc_msg.AIMessage)  # plan
+    assert isinstance(messages[3], lc_msg.AIMessage)  # issues
+    assert "Checker Issues" in messages[3].content
+    assert isinstance(messages[4], lc_msg.HumanMessage)  # feedback
+    assert "Prior Feedback" in messages[4].content
 
 
 # ── checker_subagent ──────────────────────────────────────────────────────────
@@ -485,20 +593,39 @@ def test_checker_subagent_raises_if_max_iterations_zero(
             subagents.checker_subagent("", "", config, tmp_path)
 
 
-def test_checker_subagent_human_message_contains_qa_and_files(tmp_path: pathlib.Path):
+def test_checker_subagent_human_message_contains_qa_output(tmp_path: pathlib.Path):
     _write_tern_dir(tmp_path)
     mock_model = _make_mock_model([_mock_response("")])
-
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.checker_subagent(
             "ruff: all good", "=== foo.py ===\nx=1", make_config(), tmp_path
         )
-
     messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
     human_content = messages[1].content
+    assert isinstance(messages[1], lc_msg.HumanMessage)
     assert "ruff: all good" in human_content
-    assert "=== foo.py ===" in human_content
     assert "no preamble" in human_content
+
+
+def test_checker_subagent_ai_message_contains_file_contents(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.checker_subagent("", "=== foo.py ===\nx=1", make_config(), tmp_path)
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    ai_msgs = [m for m in messages if isinstance(m, lc_msg.AIMessage)]
+    assert len(ai_msgs) == 1
+    assert "=== foo.py ===" in ai_msgs[0].content
+
+
+def test_checker_subagent_omits_ai_message_when_no_files(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.checker_subagent("", "", make_config(), tmp_path)
+    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    ai_msgs = [m for m in messages if isinstance(m, lc_msg.AIMessage)]
+    assert len(ai_msgs) == 0
 
 
 # ── summarizer_subagent ───────────────────────────────────────────────────────
@@ -535,8 +662,9 @@ def test_summarizer_subagent_includes_plan_in_prompt(tmp_path: pathlib.Path):
         subagents.summarizer_subagent(
             {"plan": "step 1: train model", "messages": []}, make_config(), tmp_path
         )
-    human_content = mock_model.invoke.call_args[0][0][1].content
-    assert "step 1: train model" in human_content
+    messages = mock_model.invoke.call_args[0][0]
+    assert isinstance(messages[2], lc_msg.AIMessage)
+    assert "step 1: train model" in messages[2].content
 
 
 def test_summarizer_subagent_includes_written_files_in_prompt(tmp_path: pathlib.Path):
@@ -578,8 +706,8 @@ def test_summarizer_subagent_skips_plan_section_when_plan_absent(
             make_config(),
             tmp_path,
         )
-    human_content = mock_model.invoke.call_args[0][0][1].content
-    assert "## Plan" not in human_content
+    messages = mock_model.invoke.call_args[0][0]
+    assert len(messages) == 2  # no AIMessage when plan absent
 
 
 def test_summarizer_subagent_skips_empty_human_message(tmp_path: pathlib.Path):

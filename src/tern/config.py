@@ -42,7 +42,9 @@ class Spec:
 
 def _get_mapping(raw: dict, key: str, label: str, *, allow_null: bool = False) -> dict:
     if key not in raw:
-        return {}
+        if allow_null:
+            return {}
+        raise ValueError(f"missing required field: {label}")
     value = raw[key]
     if value is None and allow_null:
         return {}

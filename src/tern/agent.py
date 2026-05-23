@@ -65,7 +65,14 @@ def planner_node(
 def maker_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
-    files = tern_subagents.maker_subagent(state["plan"] or "", config, tern_dir)
+    files = tern_subagents.maker_subagent(
+        state["objective"] or "",
+        state["plan"] or "",
+        config,
+        tern_dir,
+        issues=state["issues"],
+        feedback=state["feedback"],
+    )
     return {
         "written_files": files,
         "maker_checker_cycles": state["maker_checker_cycles"] + 1,
@@ -93,8 +100,8 @@ def checker_node(
         try:
             resolved = pathlib.Path(path_str).resolve()
             resolved.relative_to(cwd)
-            content = resolved.read_text()
-            file_contents += f"=== {path_str} ===\n{content}\n"
+            content = resolved.read_text(encoding="utf-8")
+            file_contents += f"=== {resolved.relative_to(cwd)} ===\n{content}\n"
         except FileNotFoundError, ValueError:
             pass
     issues = tern_subagents.checker_subagent(
@@ -125,7 +132,10 @@ def summarizer_node(
 
 def route_from_user(state: AgentState) -> str:
     if not state["objective"]:
-        return "summarizer" if state["need_handoff"] else lg_graph.END
+        return lg_graph.END
+
+    if state["need_handoff"]:
+        return "summarizer"
 
     if state["plan_approved"] is not True:
         return "planner"
