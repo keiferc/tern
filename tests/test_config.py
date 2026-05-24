@@ -41,6 +41,22 @@ def valid_spec_yaml(tern_dir: pathlib.Path) -> pathlib.Path:
     return path
 
 
+# ── _load_yaml_mapping ───────────────────────────────────────────────────
+
+
+def test_load_yaml_mapping_returns_dict(tern_dir: pathlib.Path):
+    path = tern_dir / "test.yaml"
+    path.write_text("key: value\n", encoding="utf-8")
+    assert config._load_yaml_mapping(path) == {"key": "value"}
+
+
+def test_load_yaml_mapping_non_mapping_raises_with_filename(tern_dir: pathlib.Path):
+    path = tern_dir / "test.yaml"
+    path.write_text("- item1\n- item2\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="test.yaml"):
+        config._load_yaml_mapping(path)
+
+
 # ── load_config ───────────────────────────────────────────────────────────
 
 

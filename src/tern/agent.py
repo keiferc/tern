@@ -2,7 +2,6 @@ import operator
 import pathlib
 import typing as T
 
-import langchain.messages as lc_msg
 import langgraph.graph as lg_graph
 import langgraph.graph.state as lg_state
 
@@ -28,7 +27,7 @@ class AgentState(T.TypedDict):
     written_files: list[str]
     feedback: list[str]
     maker_checker_cycles: int
-    messages: T.Annotated[list[lc_msg.AnyMessage], operator.add]
+    checkpoints: T.Annotated[list[str], operator.add]
 
 
 # ========================================================================= #
@@ -56,6 +55,7 @@ def planner_node(
     return {
         "plan": plan,
         "plan_approved": None,
+        "qa_output": None,
         "issues": [],
         "feedback": [],
         "maker_checker_cycles": 0,
@@ -108,7 +108,12 @@ def checker_node(
         state["qa_output"] or "", file_contents, config, tern_dir
     )
     if not issues:
-        return {"issues": [], "feedback": [], "maker_checker_cycles": 0}
+        return {
+            "issues": [],
+            "feedback": [],
+            "maker_checker_cycles": 0,
+            "checkpoints": [state["plan"]] if state["plan"] else [],
+        }
     if state["maker_checker_cycles"] >= config.max_iterations["maker_checker_cycles"]:
         return {"issues": issues, "plan_approved": None, "feedback": []}
     return {"issues": issues, "feedback": []}

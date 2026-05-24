@@ -34,7 +34,7 @@ def make_state(**kwargs: T.Any) -> agent.AgentState:
             "written_files": [],
             "feedback": [],
             "maker_checker_cycles": 0,
-            "messages": [],
+            "checkpoints": [],
             **kwargs,
         },
     )
@@ -214,6 +214,15 @@ def test_planner_node_returns_plan_fields(tmp_path: pathlib.Path):
     assert result["maker_checker_cycles"] == 0
 
 
+def test_planner_node_clears_qa_output(tmp_path: pathlib.Path):
+    state = make_state(objective="build a model", qa_output="prior output")
+    with unittest.mock.patch(
+        "tern.subagents.planner_subagent", return_value="new plan"
+    ):
+        result = agent.planner_node(state, make_config(), tmp_path)
+    assert result["qa_output"] is None
+
+
 def test_planner_node_clears_issues(tmp_path: pathlib.Path):
     state = make_state(
         objective="build a model", issues=["stale issue from prior cycle"]
@@ -319,7 +328,12 @@ def test_checker_node_skips_missing_files(
         tern_subagents, "checker_subagent", return_value=[]
     ):
         result = agent.checker_node(state, make_config(), tmp_path)
-    assert result == {"issues": [], "feedback": [], "maker_checker_cycles": 0}
+    assert result == {
+        "issues": [],
+        "feedback": [],
+        "maker_checker_cycles": 0,
+        "checkpoints": [],
+    }
 
 
 def test_checker_node_silently_skips_path_outside_cwd(
@@ -332,7 +346,12 @@ def test_checker_node_silently_skips_path_outside_cwd(
         tern_subagents, "checker_subagent", return_value=[]
     ):
         result = agent.checker_node(state, make_config(), tmp_path)
-    assert result == {"issues": [], "feedback": [], "maker_checker_cycles": 0}
+    assert result == {
+        "issues": [],
+        "feedback": [],
+        "maker_checker_cycles": 0,
+        "checkpoints": [],
+    }
 
 
 def test_summarizer_node_returns_empty_dict(tmp_path: pathlib.Path):
@@ -375,6 +394,24 @@ def test_planner_node_clears_feedback_and_resets_cycles(tmp_path: pathlib.Path):
         result = agent.planner_node(state, make_config(), tmp_path)
     assert result["feedback"] == []
     assert result["maker_checker_cycles"] == 0
+
+
+def test_checker_node_appends_checkpoint_on_clean_pass(tmp_path: pathlib.Path):
+    state = make_state(qa_output="", written_files=[], plan="step 1: build model")
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ):
+        result = agent.checker_node(state, make_config(), tmp_path)
+    assert result["checkpoints"] == ["step 1: build model"]
+
+
+def test_checker_node_does_not_append_checkpoint_on_issues(tmp_path: pathlib.Path):
+    state = make_state(qa_output="", written_files=[], plan="step 1: build model")
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=["unused import"]
+    ):
+        result = agent.checker_node(state, make_config(), tmp_path)
+    assert "checkpoints" not in result
 
 
 def test_checker_node_resets_cycles_on_clean_pass(tmp_path: pathlib.Path):
@@ -444,8 +481,6 @@ def test_checker_node_clears_feedback_at_cycle_limit(tmp_path: pathlib.Path):
 # ── messages accumulation ─────────────────────────────────────────────────
 
 
-def test_messages_field_uses_add_reducer():
-    # Annotated[list[AnyMessage], operator.add] means updates append, not replace.
-    # Verify the annotation is in place on the AgentState class.
-    annotated_args = T.get_args(agent.AgentState.__annotations__["messages"])
+def test_checkpoints_field_uses_add_reducer():
+    annotated_args = T.get_args(agent.AgentState.__annotations__["checkpoints"])
     assert operator.add in annotated_args

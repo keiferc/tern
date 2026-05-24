@@ -40,6 +40,16 @@ class Spec:
 # ========================================================================= #
 
 
+def _load_yaml_mapping(path: pathlib.Path) -> dict:
+    with path.open(encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"{path.name} must be a YAML mapping, got {type(raw).__name__}"
+        )
+    return raw
+
+
 def _get_mapping(raw: dict, key: str, label: str, *, allow_null: bool = False) -> dict:
     if key not in raw:
         if allow_null:
@@ -65,14 +75,7 @@ def _get_list(d: dict, key: str, label: str, *, allow_null: bool = False) -> lis
 
 
 def load_config(tern_dir: pathlib.Path) -> Config:
-    path = tern_dir / "config.yaml"
-    with path.open() as f:
-        raw = yaml.safe_load(f)
-
-    if not isinstance(raw, dict):
-        raise ValueError(
-            f"config.yaml must be a YAML mapping, got {type(raw).__name__}"
-        )
+    raw = _load_yaml_mapping(tern_dir / "config.yaml")
 
     for section in ("models", "checker", "max_iterations"):
         if section not in raw:
@@ -99,12 +102,7 @@ def load_config(tern_dir: pathlib.Path) -> Config:
 
 
 def load_spec(tern_dir: pathlib.Path) -> Spec:
-    path = tern_dir / "spec.yaml"
-    with path.open() as f:
-        raw = yaml.safe_load(f)
-
-    if not isinstance(raw, dict):
-        raise ValueError(f"spec.yaml must be a YAML mapping, got {type(raw).__name__}")
+    raw = _load_yaml_mapping(tern_dir / "spec.yaml")
 
     for field in ("schemaVersion", "kind", "name"):
         if field not in raw:

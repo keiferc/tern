@@ -33,16 +33,7 @@ def planner_subagent(
     ]
     if prior_plan:
         messages.append(lc_msg.AIMessage(content=prior_plan))
-    if issues:
-        messages.append(
-            lc_msg.AIMessage(
-                content="## Checker Issues\n" + "\n".join(f"- {i}" for i in issues)
-            )
-        )
-    if feedback:
-        messages.append(
-            lc_msg.HumanMessage(content="## Prior Feedback\n" + "\n".join(feedback))
-        )
+    _append_context(messages, issues, feedback)
     response = _react_loop(
         model, tool_map, messages, _max_iter(config, "planner"), "planner_subagent"
     )
@@ -71,16 +62,7 @@ def maker_subagent(
         lc_msg.HumanMessage(content=objective),
         lc_msg.AIMessage(content=plan),
     ]
-    if issues:
-        messages.append(
-            lc_msg.AIMessage(
-                content="## Checker Issues\n" + "\n".join(f"- {i}" for i in issues)
-            )
-        )
-    if feedback:
-        messages.append(
-            lc_msg.HumanMessage(content="## Prior Feedback\n" + "\n".join(feedback))
-        )
+    _append_context(messages, issues, feedback)
     _react_loop(model, tool_map, messages, _max_iter(config, "maker"), "maker_subagent")
     tc_names = {
         tc["id"]: tc["name"]
@@ -109,12 +91,14 @@ def checker_subagent(
 
     if file_contents:
         preamble = (
-            "The following files were written by the maker. These are your primary review target.\n"
+            "The files written by the maker are provided below under ## Written Files. "
+            "These are your primary review target.\n"
             "Use tools only to read additional project files or verify documentation — "
             "do not re-read files already provided here.\n"
         )
     else:
         preamble = "Review the QA output below for issues.\n"
+
     task_instruction = (
         f"{preamble}\n"
         f"## QA Tool Output\n"
@@ -123,13 +107,13 @@ def checker_subagent(
         "Report each issue on its own line. "
         "Output only issues — no preamble, no summary, no explanation."
     )
+    if file_contents:
+        task_instruction += f"\n\n## Written Files\n{file_contents}"
 
     messages: list[object] = [
         lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "checker")),
         lc_msg.HumanMessage(content=task_instruction),
     ]
-    if file_contents:
-        messages.append(lc_msg.AIMessage(content=file_contents))
     response = _react_loop(
         model, tool_map, messages, _max_iter(config, "checker"), "checker_subagent"
     )
@@ -146,11 +130,9 @@ def summarizer_subagent(
         human_parts.append(f"## Objective\n{state['objective']}")
     if state.get("written_files"):
         human_parts.append("## Written Files\n" + "\n".join(state["written_files"]))
-    for msg in state.get("messages", []):
-        if isinstance(msg, lc_msg.HumanMessage):
-            text = _extract_content(msg)
-            if text:
-                human_parts.append(f"## User Message\n{text}")
+    for checkpoint in state.get("checkpoints", []):
+        if checkpoint:
+            human_parts.append(f"## Completed Plan\n{checkpoint}")
 
     plan = state.get("plan")
 
@@ -177,6 +159,20 @@ def summarizer_subagent(
 #                               Helpers                                     #
 #                                                                           #
 # ========================================================================= #
+
+
+def _append_context(
+    messages: list[object],
+    issues: list[str] | None,
+    feedback: list[str] | None,
+) -> None:
+    parts: list[str] = []
+    if issues:
+        parts.append("## Checker Issues\n" + "\n".join(f"- {i}" for i in issues))
+    if feedback:
+        parts.append("## Prior Feedback\n" + "\n".join(feedback))
+    if parts:
+        messages.append(lc_msg.HumanMessage(content="\n\n".join(parts)))
 
 
 def _max_iter(config: tern_config.Config, agent: str) -> int:
