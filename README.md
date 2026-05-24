@@ -36,14 +36,14 @@ sbx secret set -g openai      # for Codex / GPT (optional)
 ## Usage
 
 ```bash
-usage: tern [-h] {init,up} ...
+usage: tern [-h] {up,down} ...
 
 Provider-agnostic multi-agent coding assistant
 
 positional arguments:
-  {init,up}
-    init      Initialise tern in the current project
-    up        Start a tern session (not yet implemented)
+  {up,down}
+    up        Start a tern session, initializing if needed
+    down      Remove initialized tern sandbox
 
 options:
   -h, --help  show this help message and exit
