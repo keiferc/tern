@@ -283,10 +283,74 @@ def test_maker_node_returns_written_files(tmp_path: pathlib.Path):
     assert result == {"written_files": ["foo.py"], "maker_checker_cycles": 1}
 
 
-def test_qa_runner_node_returns_empty_string(tmp_path: pathlib.Path):
-    state = make_state()
-    result = agent.qa_runner_node(state, make_config(), tmp_path)
-    assert result == {"qa_output": ""}
+def test_qa_runner_node_empty_tools():
+    config = tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=[],
+        max_iterations={"default": 20, "maker_checker_cycles": 3},
+    )
+    assert agent.qa_runner_node(config) == {"qa_output": ""}
+
+
+def test_qa_runner_node_captures_stdout():
+    config = tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=["echo hello"],
+        max_iterations={"default": 20, "maker_checker_cycles": 3},
+    )
+    result = agent.qa_runner_node(config)
+    assert "hello" in result["qa_output"]
+
+
+def test_qa_runner_node_captures_stderr():
+    config = tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=["python3 -c \"import sys; sys.stderr.write('err\\n')\""],
+        max_iterations={"default": 20, "maker_checker_cycles": 3},
+    )
+    result = agent.qa_runner_node(config)
+    assert "err" in result["qa_output"]
+
+
+def test_qa_runner_node_no_raise_on_nonzero_exit():
+    config = tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=['python3 -c "import sys; sys.exit(1)"'],
+        max_iterations={"default": 20, "maker_checker_cycles": 3},
+    )
+    result = agent.qa_runner_node(config)
+    assert "qa_output" in result
+
+
+def test_qa_runner_node_no_raise_on_command_not_found():
+    config = tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=["no_such_binary_xyz"],
+        max_iterations={"default": 20, "maker_checker_cycles": 3},
+    )
+    result = agent.qa_runner_node(config)
+    assert "Error:" in result["qa_output"]
+
+
+def test_qa_runner_node_skips_empty_cmd():
+    config = tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=["", "echo ok"],
+        max_iterations={"default": 20, "maker_checker_cycles": 3},
+    )
+    result = agent.qa_runner_node(config)
+    assert "ok" in result["qa_output"]
+
+
+def test_qa_runner_node_labels_each_command():
+    config = tern_config.Config(
+        models={"default": "anthropic:claude-sonnet-4-6"},
+        checker_tools=["echo first", "echo second"],
+        max_iterations={"default": 20, "maker_checker_cycles": 3},
+    )
+    result = agent.qa_runner_node(config)
+    assert "$ echo first" in result["qa_output"]
+    assert "$ echo second" in result["qa_output"]
 
 
 def test_checker_node_wraps_subagent_result(tmp_path: pathlib.Path):

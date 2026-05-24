@@ -1,6 +1,8 @@
 import operator
 import pathlib
 import re
+import shlex
+import subprocess
 import tomllib
 import typing as T
 
@@ -93,10 +95,21 @@ def dep_check_node(state: AgentState) -> dict:
     return {"new_deps": sorted(pyproject_names - lock_names)}
 
 
-def qa_runner_node(
-    state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
-) -> dict:
-    return {"qa_output": ""}
+def qa_runner_node(config: tern_config.Config) -> dict:
+    parts_list = []
+    for cmd in config.checker_tools:
+        parts = shlex.split(cmd)
+        if not parts:
+            continue
+        parts_list.append((cmd, parts))
+    output = ""
+    for cmd, parts in parts_list:
+        try:
+            result = subprocess.run(parts, shell=False, capture_output=True, text=True)
+            output += f"$ {cmd}\n{result.stdout}{result.stderr}\n"
+        except OSError as e:
+            output += f"$ {cmd}\nError: {e}\n"
+    return {"qa_output": output}
 
 
 def checker_node(
@@ -214,7 +227,7 @@ def build_agent(
     graph.add_node("planner", lambda state: planner_node(state, config, tern_dir))
     graph.add_node("maker", lambda state: maker_node(state, config, tern_dir))
     graph.add_node("dep_check", dep_check_node)
-    graph.add_node("qa_runner", lambda state: qa_runner_node(state, config, tern_dir))
+    graph.add_node("qa_runner", lambda state: qa_runner_node(config))  # noqa: ARG005
     graph.add_node("checker", lambda state: checker_node(state, config, tern_dir))
     graph.add_node("summarizer", lambda state: summarizer_node(state, config, tern_dir))
 
