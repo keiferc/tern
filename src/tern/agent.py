@@ -1,5 +1,7 @@
 import operator
 import pathlib
+import re
+import tomllib
 import typing as T
 
 import langgraph.graph as lg_graph
@@ -79,10 +81,16 @@ def maker_node(
     }
 
 
-def dep_check_node(
-    state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
-) -> dict:
-    return {"new_deps": []}
+def dep_check_node(state: AgentState) -> dict:
+    cwd = pathlib.Path.cwd()
+    pyproject = tomllib.loads((cwd / "pyproject.toml").read_text(encoding="utf-8"))
+    raw_deps = pyproject.get("project", {}).get("dependencies", [])
+    pyproject_names = {
+        _normalize_pkg(re.split(r"[\s\[;!<>=]", dep)[0]) for dep in raw_deps
+    }
+    lock = tomllib.loads((cwd / "uv.lock").read_text(encoding="utf-8"))
+    lock_names = {_normalize_pkg(pkg["name"]) for pkg in lock.get("package", [])}
+    return {"new_deps": sorted(pyproject_names - lock_names)}
 
 
 def qa_runner_node(
@@ -179,6 +187,17 @@ def route_from_checker(state: AgentState) -> str:
 
 # ========================================================================= #
 #                                                                           #
+#                               Helpers                                     #
+#                                                                           #
+# ========================================================================= #
+
+
+def _normalize_pkg(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+# ========================================================================= #
+#                                                                           #
 #                               Graph                                       #
 #                                                                           #
 # ========================================================================= #
@@ -194,7 +213,7 @@ def build_agent(
     graph.add_node("user", user_node)
     graph.add_node("planner", lambda state: planner_node(state, config, tern_dir))
     graph.add_node("maker", lambda state: maker_node(state, config, tern_dir))
-    graph.add_node("dep_check", lambda state: dep_check_node(state, config, tern_dir))
+    graph.add_node("dep_check", dep_check_node)
     graph.add_node("qa_runner", lambda state: qa_runner_node(state, config, tern_dir))
     graph.add_node("checker", lambda state: checker_node(state, config, tern_dir))
     graph.add_node("summarizer", lambda state: summarizer_node(state, config, tern_dir))

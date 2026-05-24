@@ -283,12 +283,6 @@ def test_maker_node_returns_written_files(tmp_path: pathlib.Path):
     assert result == {"written_files": ["foo.py"], "maker_checker_cycles": 1}
 
 
-def test_dep_check_node_returns_empty_list(tmp_path: pathlib.Path):
-    state = make_state()
-    result = agent.dep_check_node(state, make_config(), tmp_path)
-    assert result == {"new_deps": []}
-
-
 def test_qa_runner_node_returns_empty_string(tmp_path: pathlib.Path):
     state = make_state()
     result = agent.qa_runner_node(state, make_config(), tmp_path)
@@ -484,3 +478,108 @@ def test_checker_node_clears_feedback_at_cycle_limit(tmp_path: pathlib.Path):
 def test_checkpoints_field_uses_add_reducer():
     annotated_args = T.get_args(agent.AgentState.__annotations__["checkpoints"])
     assert operator.add in annotated_args
+
+
+# ── dep_check_node ────────────────────────────────────────────────────────
+
+
+def _write_dep_files(
+    tmp_path: pathlib.Path,
+    deps: list[str],
+    lock_packages: list[str],
+) -> None:
+    deps_toml = "\n".join(f'  "{d}",' for d in deps)
+    (tmp_path / "pyproject.toml").write_text(
+        f"[project]\ndependencies = [\n{deps_toml}\n]\n", encoding="utf-8"
+    )
+    pkg_entries = "\n\n".join(
+        f'[[package]]\nname = "{p}"\nversion = "1.0.0"' for p in lock_packages
+    )
+    (tmp_path / "uv.lock").write_text(
+        f"version = 1\n\n{pkg_entries}\n", encoding="utf-8"
+    )
+
+
+def test_dep_check_node_in_sync(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    _write_dep_files(tmp_path, ["pandas>=1.0"], ["pandas"])
+    result = agent.dep_check_node(make_state())
+    assert result == {"new_deps": []}
+
+
+def test_dep_check_node_returns_missing_package(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    _write_dep_files(tmp_path, ["pandas>=1.0", "numpy"], ["pandas"])
+    result = agent.dep_check_node(make_state())
+    assert result == {"new_deps": ["numpy"]}
+
+
+def test_dep_check_node_strips_version_specifier(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    _write_dep_files(tmp_path, ["pandas>=1.0,<2.0"], ["pandas"])
+    result = agent.dep_check_node(make_state())
+    assert result == {"new_deps": []}
+
+
+def test_dep_check_node_normalizes_names(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    _write_dep_files(tmp_path, ["my_pkg"], ["my-pkg"])
+    result = agent.dep_check_node(make_state())
+    assert result == {"new_deps": []}
+
+
+def test_dep_check_node_no_project_section(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[build-system]\n", encoding="utf-8")
+    (tmp_path / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    result = agent.dep_check_node(make_state())
+    assert result == {"new_deps": []}
+
+
+def test_dep_check_node_no_dependencies_key(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname = 'foo'\n", encoding="utf-8"
+    )
+    (tmp_path / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    result = agent.dep_check_node(make_state())
+    assert result == {"new_deps": []}
+
+
+def test_dep_check_node_empty_lock(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    _write_dep_files(tmp_path, ["pandas"], [])
+    result = agent.dep_check_node(make_state())
+    assert result == {"new_deps": ["pandas"]}
+
+
+def test_dep_check_node_missing_pyproject(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    with pytest.raises(FileNotFoundError):
+        agent.dep_check_node(make_state())
+
+
+def test_dep_check_node_missing_lock(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    with pytest.raises(FileNotFoundError):
+        agent.dep_check_node(make_state())
