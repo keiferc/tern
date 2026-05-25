@@ -99,7 +99,7 @@ def test_cmd_up_existing_tern_dir_skips_scaffold(
             tern_main.cmd_up(argparse.Namespace())
     assert sentinel.read_text() == "original"
     assert {f.name for f in tern_dir.iterdir()} == {"sentinel.txt"}
-    assert "warning" in capsys.readouterr().out.lower()
+    assert "skipping scaffold" in capsys.readouterr().out.lower()
 
 
 def test_cmd_up_skips_create_when_sandbox_already_exists(

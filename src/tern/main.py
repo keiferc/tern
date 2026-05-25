@@ -42,7 +42,7 @@ def cmd_up(args: argparse.Namespace) -> None:
     sandbox = f"shell-{cwd.name}"
 
     if tern_dir.exists():
-        print(f"warning: .tern/ already exists at {tern_dir} — skipping scaffold.")
+        print(f".tern/ already exists at {tern_dir} — skipping scaffold.")
     else:
         tern_scaffold.scaffold_and_validate(tern_dir)
 
@@ -59,7 +59,7 @@ def cmd_up(args: argparse.Namespace) -> None:
             )
             sys.exit(result.returncode)
     else:
-        print(f"Initialised tern in {tern_dir}")
+        print("tern sandbox ready.")
 
     # ${WORKDIR} is only substituted in spec.yaml initFiles, not commands — sync explicitly
     result = _sbx(

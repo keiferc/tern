@@ -130,9 +130,9 @@ def summarizer_subagent(
         human_parts.append(f"## Objective\n{state['objective']}")
     if state.get("written_files"):
         human_parts.append("## Written Files\n" + "\n".join(state["written_files"]))
-    for checkpoint in state.get("checkpoints", []):
-        if checkpoint:
-            human_parts.append(f"## Completed Plan\n{checkpoint}")
+    for milestone in state.get("milestones", []):
+        if milestone:
+            human_parts.append(f"## Completed Plan\n{milestone}")
 
     plan = state.get("plan")
 

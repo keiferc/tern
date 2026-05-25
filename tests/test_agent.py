@@ -34,7 +34,7 @@ def make_state(**kwargs: T.Any) -> agent.AgentState:
             "written_files": [],
             "feedback": [],
             "maker_checker_cycles": 0,
-            "checkpoints": [],
+            "milestones": [],
             **kwargs,
         },
     )
@@ -390,7 +390,7 @@ def test_checker_node_skips_missing_files(
         "issues": [],
         "feedback": [],
         "maker_checker_cycles": 0,
-        "checkpoints": [],
+        "milestones": [],
     }
 
 
@@ -408,7 +408,7 @@ def test_checker_node_silently_skips_path_outside_cwd(
         "issues": [],
         "feedback": [],
         "maker_checker_cycles": 0,
-        "checkpoints": [],
+        "milestones": [],
     }
 
 
@@ -460,7 +460,7 @@ def test_checker_node_appends_checkpoint_on_clean_pass(tmp_path: pathlib.Path):
         tern_subagents, "checker_subagent", return_value=[]
     ):
         result = agent.checker_node(state, make_config(), tmp_path)
-    assert result["checkpoints"] == ["step 1: build model"]
+    assert result["milestones"] == ["step 1: build model"]
 
 
 def test_checker_node_does_not_append_checkpoint_on_issues(tmp_path: pathlib.Path):
@@ -469,7 +469,7 @@ def test_checker_node_does_not_append_checkpoint_on_issues(tmp_path: pathlib.Pat
         tern_subagents, "checker_subagent", return_value=["unused import"]
     ):
         result = agent.checker_node(state, make_config(), tmp_path)
-    assert "checkpoints" not in result
+    assert "milestones" not in result
 
 
 def test_checker_node_resets_cycles_on_clean_pass(tmp_path: pathlib.Path):
@@ -539,8 +539,8 @@ def test_checker_node_clears_feedback_at_cycle_limit(tmp_path: pathlib.Path):
 # ── messages accumulation ─────────────────────────────────────────────────
 
 
-def test_checkpoints_field_uses_add_reducer():
-    annotated_args = T.get_args(agent.AgentState.__annotations__["checkpoints"])
+def test_milestones_field_uses_add_reducer():
+    annotated_args = T.get_args(agent.AgentState.__annotations__["milestones"])
     assert operator.add in annotated_args
 
 

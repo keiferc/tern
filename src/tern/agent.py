@@ -31,7 +31,7 @@ class AgentState(T.TypedDict):
     written_files: list[str]
     feedback: list[str]
     maker_checker_cycles: int
-    checkpoints: T.Annotated[list[str], operator.add]
+    milestones: T.Annotated[list[str], operator.add]
 
 
 # ========================================================================= #
@@ -133,7 +133,7 @@ def checker_node(
             "issues": [],
             "feedback": [],
             "maker_checker_cycles": 0,
-            "checkpoints": [state["plan"]] if state["plan"] else [],
+            "milestones": [state["plan"]] if state["plan"] else [],
         }
     if state["maker_checker_cycles"] >= config.max_iterations["maker_checker_cycles"]:
         return {"issues": issues, "plan_approved": None, "feedback": []}
