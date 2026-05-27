@@ -133,6 +133,14 @@ def checker_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
     print("reviewing…", flush=True)
+    if not state["written_files"]:
+        issues = ["Maker wrote no files. Use write_file to implement the plan."]
+        if (
+            state["maker_checker_cycles"]
+            >= config.max_iterations["maker_checker_cycles"]
+        ):
+            return {"issues": issues, "plan_approved": None, "feedback": []}
+        return {"issues": issues, "feedback": []}
     file_contents = ""
     cwd = pathlib.Path.cwd().resolve()
     for path_str in state["written_files"]:

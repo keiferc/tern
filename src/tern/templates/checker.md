@@ -10,6 +10,7 @@ When reviewing:
 - Coverage < 100% is not an issue as long as the code is sufficiently tested for correctness.
 
 Output format:
+- Sort issues based on severity, highest first.
 - Report each issue on its own line.
 - Be specific: include the file, the problem, and a suggested fix.
-- If there are no issues, output nothing.
+- If there are no breaking/security/concerning issues, output nothing.

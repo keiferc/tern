@@ -342,7 +342,7 @@ def test_qa_runner_node_labels_each_command():
 
 
 def test_checker_node_wraps_subagent_result(tmp_path: pathlib.Path):
-    state = make_state(qa_output="", written_files=[])
+    state = make_state(qa_output="", written_files=["ghost.py"])
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=["unused import on line 3"]
     ):
@@ -445,7 +445,9 @@ def test_planner_node_clears_feedback_and_resets_cycles(tmp_path: pathlib.Path):
 
 
 def test_checker_node_appends_checkpoint_on_clean_pass(tmp_path: pathlib.Path):
-    state = make_state(qa_output="", written_files=[], plan="step 1: build model")
+    state = make_state(
+        qa_output="", written_files=["ghost.py"], plan="step 1: build model"
+    )
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=[]
     ):
@@ -454,7 +456,9 @@ def test_checker_node_appends_checkpoint_on_clean_pass(tmp_path: pathlib.Path):
 
 
 def test_checker_node_does_not_append_checkpoint_on_issues(tmp_path: pathlib.Path):
-    state = make_state(qa_output="", written_files=[], plan="step 1: build model")
+    state = make_state(
+        qa_output="", written_files=["ghost.py"], plan="step 1: build model"
+    )
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=["unused import"]
     ):
@@ -463,7 +467,7 @@ def test_checker_node_does_not_append_checkpoint_on_issues(tmp_path: pathlib.Pat
 
 
 def test_checker_node_resets_cycles_on_clean_pass(tmp_path: pathlib.Path):
-    state = make_state(qa_output="", written_files=[], maker_checker_cycles=2)
+    state = make_state(qa_output="", written_files=["ghost.py"], maker_checker_cycles=2)
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=[]
     ):
@@ -473,7 +477,10 @@ def test_checker_node_resets_cycles_on_clean_pass(tmp_path: pathlib.Path):
 
 def test_checker_node_resets_plan_approved_at_cycle_limit(tmp_path: pathlib.Path):
     state = make_state(
-        qa_output="", written_files=[], plan_approved=True, maker_checker_cycles=3
+        qa_output="",
+        written_files=["ghost.py"],
+        plan_approved=True,
+        maker_checker_cycles=3,
     )
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=["issue one"]
@@ -484,7 +491,10 @@ def test_checker_node_resets_plan_approved_at_cycle_limit(tmp_path: pathlib.Path
 
 def test_checker_node_does_not_reset_plan_approved_below_limit(tmp_path: pathlib.Path):
     state = make_state(
-        qa_output="", written_files=[], plan_approved=True, maker_checker_cycles=2
+        qa_output="",
+        written_files=["ghost.py"],
+        plan_approved=True,
+        maker_checker_cycles=2,
     )
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=["issue one"]
@@ -494,7 +504,9 @@ def test_checker_node_does_not_reset_plan_approved_below_limit(tmp_path: pathlib
 
 
 def test_checker_node_clears_feedback_when_no_issues(tmp_path: pathlib.Path):
-    state = make_state(qa_output="", written_files=[], feedback=["fix imports"])
+    state = make_state(
+        qa_output="", written_files=["ghost.py"], feedback=["fix imports"]
+    )
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=[]
     ):
@@ -503,7 +515,9 @@ def test_checker_node_clears_feedback_when_no_issues(tmp_path: pathlib.Path):
 
 
 def test_checker_node_clears_feedback_when_issues_found(tmp_path: pathlib.Path):
-    state = make_state(qa_output="", written_files=[], feedback=["fix imports"])
+    state = make_state(
+        qa_output="", written_files=["ghost.py"], feedback=["fix imports"]
+    )
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=["unused import on line 3"]
     ):
@@ -514,7 +528,7 @@ def test_checker_node_clears_feedback_when_issues_found(tmp_path: pathlib.Path):
 def test_checker_node_clears_feedback_at_cycle_limit(tmp_path: pathlib.Path):
     state = make_state(
         qa_output="",
-        written_files=[],
+        written_files=["ghost.py"],
         feedback=["fix imports"],
         plan_approved=True,
         maker_checker_cycles=3,
@@ -524,6 +538,24 @@ def test_checker_node_clears_feedback_at_cycle_limit(tmp_path: pathlib.Path):
     ):
         result = agent.checker_node(state, make_config(), tmp_path)
     assert result.get("feedback") == []
+
+
+def test_checker_node_no_written_files_returns_synthetic_issue(tmp_path: pathlib.Path):
+    state = make_state(qa_output="", written_files=[], maker_checker_cycles=1)
+    result = agent.checker_node(state, make_config(), tmp_path)
+    assert result["issues"] == [
+        "Maker wrote no files. Use write_file to implement the plan."
+    ]
+    assert "plan_approved" not in result
+
+
+def test_checker_node_no_written_files_at_cycle_limit(tmp_path: pathlib.Path):
+    state = make_state(qa_output="", written_files=[], maker_checker_cycles=20)
+    result = agent.checker_node(state, make_config(), tmp_path)
+    assert result["issues"] == [
+        "Maker wrote no files. Use write_file to implement the plan."
+    ]
+    assert result.get("plan_approved") is None
 
 
 # ── messages accumulation ─────────────────────────────────────────────────
