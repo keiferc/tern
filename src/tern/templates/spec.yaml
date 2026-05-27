@@ -1,0 +1,220 @@
+schemaVersion: "1"
+kind: agent
+name: tern
+
+agent:
+  image: ghcr.io/keiferc/tern:0.1.0
+  persistence: persistent
+  entrypoint:
+    run: ["sh", "-c", "uv sync --quiet && /home/agent/.venv/bin/tern _repl"]
+
+credentials:
+  sources:
+    anthropic:
+      env: [ANTHROPIC_API_KEY]
+    openai:
+      env: [OPENAI_API_KEY]
+    google:
+      env: [GOOGLE_API_KEY, GEMINI_API_KEY]
+    xai:
+      env: [XAI_API_KEY]
+    mistral:
+      env: [MISTRAL_API_KEY]
+
+environment:
+  proxyManaged:
+    - ANTHROPIC_API_KEY
+    - OPENAI_API_KEY
+    - GOOGLE_API_KEY
+    - GEMINI_API_KEY
+    - XAI_API_KEY
+    - MISTRAL_API_KEY
+
+network:
+  serviceDomains:
+    api.anthropic.com: anthropic
+    api.openai.com: openai
+    generativelanguage.googleapis.com: google
+    api.x.ai: xai
+    api.mistral.ai: mistral
+  serviceAuth:
+    anthropic:
+      headerName: x-api-key
+      valueFormat: "%s"
+    openai:
+      headerName: Authorization
+      valueFormat: "Bearer %s"
+    google:
+      headerName: x-goog-api-key
+      valueFormat: "%s"
+    xai:
+      headerName: Authorization
+      valueFormat: "Bearer %s"
+    mistral:
+      headerName: Authorization
+      valueFormat: "Bearer %s"
+  allowedDomains:
+    # ai services
+    - "**.chatgpt.com:443"
+    - "**.cursor.sh:443"
+    - "**.factory.ai:443"
+    - "**.oaistatic.com:443"
+    - "**.oaiusercontent.com:443"
+    - "api-inference.huggingface.co:443"
+    - "api.perplexity.ai:443"
+    - "api.workos.com:443"
+    - "cdn.openaimerge.com:443"
+    - "chatgpt.com:443"
+    - "claude.com:443"
+    - "cursor.com:443"
+    - "downloads.claude.ai:443"
+    - "factory.ai:443"
+    - "gemini.google.com:443"
+    - "generativelanguage.googleapis.com:443"
+    - "models.dev:443"
+    - "platform.claude.com:443"
+    - "play.googleapis.com:443"
+    - "statsig.anthropic.com:443"
+    # package managers
+    - "**.bun.sh:443"
+    - "**.gradle.org:443"
+    - "**.packagist.org:443"
+    - "**.yarnpkg.com:443"
+    - "apache.org:443"
+    - "astral.sh:443"
+    - "bootstrap.pypa.io:443"
+    - "bun.sh:443"
+    - "cocoapods.org:443"
+    - "cpan.org:443"
+    - "crates.io:443"
+    - "dot.net:443"
+    - "dotnet.microsoft.com:443"
+    - "eclipse.org:443"
+    - "files.pythonhosted.org:443"
+    - "golang.org:443"
+    - "goproxy.io:443"
+    - "gradle.org:443"
+    - "haskell.org:443"
+    - "hex.pm:443"
+    - "index.crates.io:443"
+    - "java.com:443"
+    - "java.net:443"
+    - "maven.org:443"
+    - "metacpan.org:443"
+    - "nodejs.org:443"
+    - "nodesource.com:443"
+    - "npm.duckdb.org:443"
+    - "npmjs.com:443"
+    - "npmjs.org:443"
+    - "nuget.org:443"
+    - "packagist.com:443"
+    - "packagist.org:443"
+    - "pkg.go.dev:443"
+    - "proxy.golang.org:443"
+    - "pub.dev:443"
+    - "pypa.io:443"
+    - "pypi.org:443"
+    - "pypi.python.org:443"
+    - "pythonhosted.org:443"
+    - "registry.npmjs.org:443"
+    - "repo.maven.apache.org:443"
+    - "ruby-lang.org:443"
+    - "rubygems.org:443"
+    - "rubyonrails.org:443"
+    - "rustup.rs:443"
+    - "rvm.io:443"
+    - "sh.rustup.rs:443"
+    - "spring.io:443"
+    - "static.crates.io:443"
+    - "static.rust-lang.org:443"
+    - "sum.golang.org:443"
+    - "swift.org:443"
+    - "tuf-repo-cdn.sigstore.dev:443"
+    - "yarnpkg.com:443"
+    - "ziglang.org:443"
+    # code and containers
+    - "**.data.mcr.microsoft.com:443"
+    - "**.docker.com:443"
+    - "**.docker.io:443"
+    - "**.gcr.io:443"
+    - "**.github.com:443"
+    - "**.githubcopilot.com:443"
+    - "**.githubusercontent.com:443"
+    - "**.gitlab.com:443"
+    - "**.production.cloudflare.docker.com:443"
+    - "**.production.cloudfront.docker.com:443"
+    - "bitbucket.org:443"
+    - "dhi.io:443"
+    - "docker-images-prod.6aa30f8b08e16409b46e0173d6de2f56.r2.cloudflarestorage.com:443"
+    - "docker.com:443"
+    - "docker.io:443"
+    - "gcr.io:443"
+    - "ghcr.io:443"
+    - "github.com:443"
+    - "gitlab.com:443"
+    - "k8s.io:443"
+    - "launchpad.net:443"
+    - "mcr.microsoft.com:443"
+    - "ppa.launchpad.net:443"
+    - "production.cloudflare.docker.com:443"
+    - "production.cloudfront.docker.com:443"
+    - "public.ecr.aws:443"
+    - "quay.io:443"
+    - "registry.k8s.io:443"
+    - "sourceforge.net:443"
+    # cloud infrastructure
+    - "**.amazonaws.com:443"
+    - "**.googleapis.com:443"
+    - "**.googleusercontent.com:443"
+    - "**.gstatic.com:443"
+    - "**.gvt1.com:443"
+    - "**.hashicorp.com:443"
+    - "**.public.blob.vercel-storage.com:443"
+    - "**.visualstudio.com:443"
+    - "apis.google.com:443"
+    - "app.daytona.io:443"
+    - "azure.com:443"
+    - "binaries.prisma.sh:443"
+    - "challenges.cloudflare.com:443"
+    - "clerk.com:443"
+    - "csp.withgoogle.com:443"
+    - "dev.azure.com:443"
+    - "dl.google.com:443"
+    - "fastly.com:443"
+    - "figma.com:443"
+    - "hashicorp.com:443"
+    - "jsdelivr.net:443"
+    - "json-schema.org:443"
+    - "json.schemastore.org:443"
+    - "login.microsoftonline.com:443"
+    - "mise-versions.jdx.dev:443"
+    - "mise.run:443"
+    - "packages.microsoft.com:443"
+    - "play.google.com:443"
+    - "playwright.azureedge.net:443"
+    - "supabase.com:443"
+    - "unpkg.com:443"
+    - "vercel.com:443"
+    - "visualstudio.com:443"
+    - "www.google.com:443"
+    # os packages
+    - "**.debian.org:443"
+    - "alpinelinux.org:443"
+    - "apt.llvm.org:443"
+    - "archive.ubuntu.com:443"
+    - "archive.ubuntu.com:80"
+    - "archlinux.org:443"
+    - "centos.org:443"
+    - "debian.org:443"
+    - "dl-cdn.alpinelinux.org:443"
+    - "fedoraproject.org:443"
+    - "packagecloud.io:443"
+    - "ports.ubuntu.com:443"
+    - "ports.ubuntu.com:80"
+    - "security.ubuntu.com:443"
+    - "security.ubuntu.com:80"
+    - "ubuntu.com:443"
+    # documentation
+    - "docs.docker.com:443"
+    - "docs.langchain.com:443"
+    - "docs.python.org:443"
