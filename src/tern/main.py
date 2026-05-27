@@ -1,6 +1,7 @@
 import argparse
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import typing as T
@@ -13,6 +14,7 @@ import langgraph.types as lg_types
 import tern.agent as tern_agent
 import tern.config as tern_config
 import tern.scaffold as tern_scaffold
+import tern.ui as tern_ui
 
 
 # ========================================================================= #
@@ -46,6 +48,8 @@ def main() -> None:
 
     if args.command == "up":
         cmd_up(args)
+    elif args.command == "on":
+        cmd_on(args)
     elif args.command == "down":
         cmd_down(args)
     elif args.command == "_repl":
@@ -56,13 +60,37 @@ def get_cli_args() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tern",
         description="Provider-agnostic multi-agent coding assistant",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "subcommand flags:\n"
+            "  up    --scaffold   initialize .tern/ scaffold only\n"
+            "        --sandbox    initialize sandbox only\n"
+            "  down  --scaffold   remove .tern/ scaffold only\n"
+            "        --sandbox    remove sandbox only\n"
+        ),
     )
     subparsers = parser.add_subparsers(
-        dest="command", required=True, metavar="{up,down}"
+        dest="command", required=True, metavar="{up,on,down}"
     )
 
-    subparsers.add_parser("up", help="Start a tern session, initializing if needed")
-    subparsers.add_parser("down", help="Remove initialized tern sandbox")
+    up_parser = subparsers.add_parser("up", help="Initialize scaffold and/or sandbox")
+    up_parser.add_argument(
+        "--scaffold", action="store_true", help="Initialize .tern/ scaffold only"
+    )
+    up_parser.add_argument(
+        "--sandbox", action="store_true", help="Initialize sandbox only"
+    )
+
+    subparsers.add_parser("on", help="Connect to sandbox and start REPL")
+
+    down_parser = subparsers.add_parser("down", help="Remove scaffold and/or sandbox")
+    down_parser.add_argument(
+        "--scaffold", action="store_true", help="Remove .tern/ scaffold only"
+    )
+    down_parser.add_argument(
+        "--sandbox", action="store_true", help="Remove sandbox only"
+    )
+
     subparsers.add_parser("_repl", help=argparse.SUPPRESS)
     subparsers._choices_actions.pop()  # hide _repl from help table
 
@@ -74,34 +102,80 @@ def cmd_up(args: argparse.Namespace) -> None:
     tern_dir = cwd / ".tern"
     sandbox = f"tern-{cwd.name}"
 
-    if tern_dir.exists():
-        print(f"Skipping scaffolding; .tern/ already exists at {tern_dir}.")
-    else:
-        tern_scaffold.scaffold_and_validate(tern_dir)
+    scaffold_only = getattr(args, "scaffold", False) and not getattr(
+        args, "sandbox", False
+    )
+    sandbox_only = getattr(args, "sandbox", False) and not getattr(
+        args, "scaffold", False
+    )
 
-    if _sandbox_exists(sandbox):
-        result = _sbx(
-            [
-                "sbx",
-                "exec",
-                "-it",
-                "-w",
-                str(cwd),
-                sandbox,
-                "sh",
-                "-lc",
-                "uv sync --quiet && /home/agent/.venv/bin/tern _repl",
-            ]
+    if not sandbox_only:
+        _init_scaffold(tern_dir)
+
+    if scaffold_only:
+        return
+
+    if sandbox_only and not tern_dir.exists():
+        print(
+            f"error: scaffold not found at {tern_dir}. Run `tern up --scaffold` first."
         )
-    else:
-        result = _sbx(
-            ["sbx", "run", "--kit", str(tern_dir), "--name", sandbox, "tern", str(cwd)]
-        )
+        sys.exit(1)
+
+    sys.exit(_init_sandbox(sandbox, tern_dir))
+
+
+def cmd_on(args: argparse.Namespace) -> None:
+    cwd = pathlib.Path.cwd()
+    tern_dir = cwd / ".tern"
+    sandbox = f"tern-{cwd.name}"
+
+    if not tern_dir.exists():
+        print(f"error: scaffold not found at {tern_dir}. Run `tern up` first.")
+        sys.exit(1)
+
+    tern_ui.print_stage("Loading scaffold")
+
+    with tern_ui.Spinner(f"Connecting to sandbox '{sandbox}'"):
+        exists = _sandbox_exists(sandbox)
+
+    if not exists:
+        print(f"error: sandbox '{sandbox}' not found. Run `tern up` first.")
+        sys.exit(1)
+
+    result = _sbx(
+        [
+            "sbx",
+            "exec",
+            "-it",
+            "-w",
+            str(cwd),
+            sandbox,
+            "sh",
+            "-lc",
+            "echo 'Preparing tern agent...' && uv sync --quiet && /home/agent/.venv/bin/tern _repl",
+        ]
+    )
     sys.exit(result.returncode)
 
 
 def cmd_down(args: argparse.Namespace) -> None:
-    sandbox = f"tern-{pathlib.Path.cwd().name}"
+    cwd = pathlib.Path.cwd()
+    tern_dir = cwd / ".tern"
+    sandbox = f"tern-{cwd.name}"
+
+    scaffold_only = getattr(args, "scaffold", False) and not getattr(
+        args, "sandbox", False
+    )
+    sandbox_only = getattr(args, "sandbox", False) and not getattr(
+        args, "scaffold", False
+    )
+
+    if not sandbox_only:
+        _remove_scaffold(tern_dir)
+
+    if scaffold_only:
+        return
+
     result = _sbx(["sbx", "rm", sandbox])
     sys.exit(result.returncode)
 
@@ -150,6 +224,50 @@ def cmd_repl(args: argparse.Namespace) -> None:
 #                               Helpers                                     #
 #                                                                           #
 # ========================================================================= #
+
+
+def _init_scaffold(tern_dir: pathlib.Path) -> None:
+    if tern_dir.exists():
+        print(f"Scaffold already exists at {tern_dir}.")
+    else:
+        tern_scaffold.scaffold_and_validate(tern_dir)
+        print(f"Initialized scaffold at {tern_dir}.")
+
+
+def _init_sandbox(sandbox: str, tern_dir: pathlib.Path) -> int:
+    if _sandbox_exists(sandbox):
+        print(f"Sandbox '{sandbox}' already exists.")
+        return 0
+    result = _sbx(
+        [
+            "sbx",
+            "run",
+            "--kit",
+            str(tern_dir),
+            "--name",
+            sandbox,
+            "sh",
+            "-c",
+            "uv sync --quiet",
+        ]
+    )
+    if result.returncode == 0:
+        print(f"Initialized sandbox '{sandbox}'.")
+    return result.returncode
+
+
+def _remove_scaffold(tern_dir: pathlib.Path) -> None:
+    if not tern_dir.exists():
+        print(f"Scaffold not found at {tern_dir}.")
+        return
+    try:
+        answer = input(f"Remove {tern_dir}? [y/N]: ").strip().lower()
+    except KeyboardInterrupt, EOFError:
+        print()
+        return
+    if answer == "y":
+        shutil.rmtree(tern_dir)
+        print(f"Removed {tern_dir}.")
 
 
 def _init_repl_graph(
@@ -201,8 +319,9 @@ def _print_checkpoint(checkpoint: str, state: dict) -> None:
 
 
 def _prompt(checkpoint: str) -> str | None:
+    tern_ui.print_separator()
     try:
-        return input(_PROMPTS[checkpoint]).strip()
+        return input(tern_ui.format_prompt(_PROMPTS[checkpoint])).strip()
     except KeyboardInterrupt, EOFError:
         print()
         return None
