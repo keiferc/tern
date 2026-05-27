@@ -6,7 +6,7 @@ agent:
   image: ghcr.io/keiferc/tern:0.1.0
   persistence: persistent
   entrypoint:
-    run: ["sh", "-c", "uv sync --quiet && /home/agent/.venv/bin/tern _repl"]
+    run: ["uv", "sync", "--quiet"]
 
 credentials:
   sources:

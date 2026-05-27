@@ -238,19 +238,7 @@ def _init_sandbox(sandbox: str, tern_dir: pathlib.Path) -> int:
     if _sandbox_exists(sandbox):
         print(f"Sandbox '{sandbox}' already exists.")
         return 0
-    result = _sbx(
-        [
-            "sbx",
-            "run",
-            "--kit",
-            str(tern_dir),
-            "--name",
-            sandbox,
-            "sh",
-            "-c",
-            "uv sync --quiet",
-        ]
-    )
+    result = _sbx(["sbx", "run", "--kit", str(tern_dir), "tern"])
     if result.returncode == 0:
         print(f"Initialized sandbox '{sandbox}'.")
     return result.returncode
