@@ -230,7 +230,6 @@ def _compute_update(checkpoint: str, user_input: str) -> dict:
     return {
         "objective": user_input,
         "qa_output": None,
-        "issues": [],
         "deps_approved": None,
         "plan_approved": None,
         "feedback": [],

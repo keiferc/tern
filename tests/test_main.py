@@ -332,10 +332,10 @@ def test_compute_update_objective_clears_stale():
     assert result["qa_output"] is None
     assert result["plan_approved"] is None
     assert result["deps_approved"] is None
-    assert result["issues"] == []
     assert result["feedback"] == []
     assert result["new_deps"] == []
     assert result["maker_checker_cycles"] == 0
+    assert "issues" not in result
 
 
 # ── _invoke ───────────────────────────────────────────────────────────────────

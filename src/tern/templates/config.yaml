@@ -10,7 +10,7 @@ max_iterations:
   maker: 20
   checker: 10
   summarizer: 5
-  maker_checker_cycles: 3
+  maker_checker_cycles: 10 # if issues remain after n cycles, inform user
 
 checker:
   tools:
