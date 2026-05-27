@@ -226,7 +226,13 @@ def _compute_update(checkpoint: str, user_input: str) -> dict:
     if checkpoint == "dep_approval":
         if user_input.lower() == "approve":
             return {"deps_approved": True, "feedback": []}
-        return {"deps_approved": False, "feedback": [user_input]}
+        return {
+            "deps_approved": None,
+            "plan_approved": None,
+            "new_deps": [],
+            "issues": [],
+            "feedback": [user_input],
+        }
     return {
         "objective": user_input,
         "qa_output": None,
@@ -235,6 +241,7 @@ def _compute_update(checkpoint: str, user_input: str) -> dict:
         "feedback": [],
         "new_deps": [],
         "maker_checker_cycles": 0,
+        "session_objectives": [user_input],
     }
 
 

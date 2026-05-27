@@ -118,6 +118,9 @@ def checker_subagent(
     file_contents: str,
     config: tern_config.Config,
     tern_dir: pathlib.Path,
+    *,
+    plan: str | None = None,
+    feedback: list[str] | None = None,
 ) -> list[str]:
     tools: T.Sequence[lc_tools.BaseTool] = [
         tern_tools.web_fetch,
@@ -138,13 +141,17 @@ def checker_subagent(
     else:
         preamble = "no preamble. Review the QA output below for issues.\n"
 
-    task_instruction = (
-        f"{preamble}\n## QA Tool Output\n{qa_output}\n\n"
-        "Report each issue on its own line. If there are no issues, output nothing "
-        "— an empty response. "
-    )
+    task_instruction = f"{preamble}\n## QA Tool Output\n{qa_output}\n"
+    if plan:
+        task_instruction += f"\n## Approved Plan\n{plan}\n"
+    if feedback:
+        task_instruction += "\n## Session Feedback\n" + "\n".join(feedback) + "\n"
     if file_contents:
-        task_instruction += f"\n\n## Written Files\n{file_contents}"
+        task_instruction += f"\n## Written Files\n{file_contents}\n"
+    task_instruction += (
+        "\nReport each issue on its own line. "
+        "If there are no issues, output nothing — an empty response."
+    )
 
     messages: list[object] = [
         lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "checker")),
@@ -166,14 +173,19 @@ def checker_subagent(
 
 
 def summarizer_subagent(
-    state: dict, config: tern_config.Config, tern_dir: pathlib.Path
+    state: dict,
+    file_contents: str,
+    config: tern_config.Config,
+    tern_dir: pathlib.Path,
 ) -> str:
     human_parts: list[str] = []
 
-    if state.get("objective"):
-        human_parts.append(f"## Objective\n{state['objective']}")
-    if state.get("written_files"):
-        human_parts.append("## Written Files\n" + "\n".join(state["written_files"]))
+    objectives = state.get("session_objectives") or []
+    if objectives:
+        numbered = "\n".join(f"{i + 1}. {o}" for i, o in enumerate(objectives))
+        human_parts.append(f"## Objectives\n{numbered}")
+    if file_contents:
+        human_parts.append(f"## Files Written\n{file_contents}")
     for milestone in state.get("milestones", []):
         if milestone:
             human_parts.append(f"## Completed Plan\n{milestone}")

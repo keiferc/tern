@@ -32,6 +32,8 @@ class AgentState(T.TypedDict):
     feedback: list[str]
     maker_checker_cycles: int
     milestones: T.Annotated[list[str], operator.add]
+    session_objectives: T.Annotated[list[str], operator.add]
+    session_files: T.Annotated[list[str], operator.add]
 
 
 INITIAL_STATE: dict = {
@@ -47,6 +49,8 @@ INITIAL_STATE: dict = {
     "feedback": [],
     "maker_checker_cycles": 0,
     "milestones": [],
+    "session_objectives": [],
+    "session_files": [],
 }
 
 
@@ -141,21 +145,14 @@ def checker_node(
         ):
             return {"issues": issues, "plan_approved": None, "feedback": []}
         return {"issues": issues, "feedback": []}
-    file_contents = ""
-    cwd = pathlib.Path.cwd().resolve()
-    for path_str in state["written_files"]:
-        try:
-            resolved = pathlib.Path(path_str).resolve()
-            rel = resolved.relative_to(cwd)
-            content = resolved.read_text(encoding="utf-8")
-            file_contents += f"=== {rel} ===\n{content}\n"
-        except FileNotFoundError, ValueError:
-            pass
+    file_contents = _read_file_contents(state["written_files"])
     issues = tern_subagents.checker_subagent(
         state["qa_output"],  # ty: ignore[invalid-argument-type]
         file_contents,
         config,
         tern_dir,
+        plan=state["plan"],
+        feedback=state["feedback"],
     )
     if not issues:
         return {
@@ -163,6 +160,7 @@ def checker_node(
             "feedback": [],
             "maker_checker_cycles": 0,
             "milestones": [state["plan"]],
+            "session_files": state["written_files"],
         }
     if state["maker_checker_cycles"] >= config.max_iterations["maker_checker_cycles"]:
         return {"issues": issues, "plan_approved": None, "feedback": []}
@@ -173,7 +171,9 @@ def summarizer_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
     print("generating handoff…", flush=True)
-    doc = tern_subagents.summarizer_subagent(dict(state), config, tern_dir)
+    doc = tern_subagents.summarizer_subagent(
+        dict(state), _read_file_contents(state["session_files"]), config, tern_dir
+    )
     if doc:
         pathlib.Path.cwd().joinpath("HANDOFF.md").write_text(doc, encoding="utf-8")
     return {}
@@ -202,8 +202,6 @@ def route_from_user(state: AgentState) -> str:
     if state["new_deps"] and state["deps_approved"] is True:
         return "qa_runner"
 
-    # deps_approved=False: user rejected the proposed deps; send maker back
-    # to rework the implementation without adding them.
     return "maker"
 
 
@@ -230,6 +228,20 @@ def route_from_checker(state: AgentState) -> str:
 
 def _normalize_pkg(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _read_file_contents(paths: list[str]) -> str:
+    result = ""
+    cwd = pathlib.Path.cwd().resolve()
+    for path_str in paths:
+        try:
+            resolved = pathlib.Path(path_str).resolve()
+            rel = resolved.relative_to(cwd)
+            content = resolved.read_text(encoding="utf-8")
+            result += f"=== {rel} ===\n{content}\n"
+        except FileNotFoundError, ValueError:
+            pass
+    return result
 
 
 # ========================================================================= #

@@ -627,6 +627,28 @@ def test_checker_subagent_raises_if_max_iterations_zero(tmp_path: pathlib.Path):
             subagents.checker_subagent("", "", config, tmp_path)
 
 
+def test_checker_subagent_includes_plan_in_task_instruction(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.checker_subagent(
+            "", "", make_config(), tmp_path, plan="step 1: build model"
+        )
+    human_content = mock_model.bind_tools.return_value.invoke.call_args[0][0][1].content
+    assert "step 1: build model" in human_content
+
+
+def test_checker_subagent_includes_feedback_in_task_instruction(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.checker_subagent(
+            "", "", make_config(), tmp_path, feedback=["ignore coverage warnings"]
+        )
+    human_content = mock_model.bind_tools.return_value.invoke.call_args[0][0][1].content
+    assert "ignore coverage warnings" in human_content
+
+
 def test_checker_subagent_human_message_contains_qa_output(tmp_path: pathlib.Path):
     _write_tern_dir(tmp_path)
     mock_model = _make_mock_model([_mock_response("")])
@@ -670,7 +692,8 @@ def test_summarizer_subagent_empty_state_returns_empty_without_calling_model(
 ):
     with unittest.mock.patch("tern.models.get_model") as mock_get:
         result = subagents.summarizer_subagent(
-            {"objective": None, "plan": None, "written_files": [], "milestones": []},
+            {"session_objectives": [], "plan": None, "milestones": []},
+            "",
             make_config(),
             tmp_path,
         )
@@ -683,7 +706,8 @@ def test_summarizer_subagent_includes_objective_in_prompt(tmp_path: pathlib.Path
     mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.summarizer_subagent(
-            {"objective": "build a classifier", "milestones": []},
+            {"session_objectives": ["build a classifier"], "milestones": []},
+            "",
             make_config(),
             tmp_path,
         )
@@ -696,19 +720,23 @@ def test_summarizer_subagent_includes_plan_in_prompt(tmp_path: pathlib.Path):
     mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.summarizer_subagent(
-            {"plan": "step 1: train model", "milestones": []}, make_config(), tmp_path
+            {"plan": "step 1: train model", "milestones": []},
+            "",
+            make_config(),
+            tmp_path,
         )
     messages = mock_model.invoke.call_args[0][0]
     assert isinstance(messages[2], lc_msg.AIMessage)
     assert "step 1: train model" in messages[2].content
 
 
-def test_summarizer_subagent_includes_written_files_in_prompt(tmp_path: pathlib.Path):
+def test_summarizer_subagent_includes_file_contents_in_prompt(tmp_path: pathlib.Path):
     _write_tern_dir(tmp_path)
     mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.summarizer_subagent(
-            {"written_files": ["src/model.py"], "milestones": []},
+            {"milestones": []},
+            "=== src/model.py ===\nx = 1",
             make_config(),
             tmp_path,
         )
@@ -722,9 +750,10 @@ def test_summarizer_subagent_includes_milestones_in_prompt(tmp_path: pathlib.Pat
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.summarizer_subagent(
             {
-                "objective": "build a model",
+                "session_objectives": ["build a model"],
                 "milestones": ["step 1: train model", "step 2: evaluate model"],
             },
+            "",
             make_config(),
             tmp_path,
         )
@@ -738,7 +767,8 @@ def test_summarizer_subagent_skips_empty_checkpoint(tmp_path: pathlib.Path):
     mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.summarizer_subagent(
-            {"objective": "build a model", "milestones": [""]},
+            {"session_objectives": ["build a model"], "milestones": [""]},
+            "",
             make_config(),
             tmp_path,
         )
@@ -753,7 +783,8 @@ def test_summarizer_subagent_skips_plan_section_when_plan_absent(
     mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.summarizer_subagent(
-            {"objective": "build a model", "milestones": []},
+            {"session_objectives": ["build a model"], "milestones": []},
+            "",
             make_config(),
             tmp_path,
         )

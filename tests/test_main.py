@@ -37,6 +37,8 @@ def _base_state(**kwargs) -> dict:
         "feedback": [],
         "maker_checker_cycles": 0,
         "milestones": [],
+        "session_objectives": [],
+        "session_files": [],
     }
     state.update(kwargs)
     return state
@@ -312,7 +314,13 @@ def test_detect_checkpoint(state_kwargs: dict, expected: str):
         (
             "dep_approval",
             "use stdlib instead",
-            {"deps_approved": False, "feedback": ["use stdlib instead"]},
+            {
+                "deps_approved": None,
+                "plan_approved": None,
+                "new_deps": [],
+                "issues": [],
+                "feedback": ["use stdlib instead"],
+            },
         ),
     ],
     ids=[
@@ -335,6 +343,7 @@ def test_compute_update_objective_clears_stale():
     assert result["feedback"] == []
     assert result["new_deps"] == []
     assert result["maker_checker_cycles"] == 0
+    assert result["session_objectives"] == ["build a classifier"]
     assert "issues" not in result
 
 
