@@ -47,6 +47,8 @@ def make_state(**kwargs: T.Any) -> agent.AgentState:
             "feedback": [],
             "maker_checker_cycles": 0,
             "milestones": [],
+            "session_objectives": [],
+            "session_files": [],
             **kwargs,
         },
     )
@@ -381,6 +383,7 @@ def test_checker_node_skips_missing_files(
         "feedback": [],
         "maker_checker_cycles": 0,
         "milestones": ["step 1"],
+        "session_files": [str(tmp_path / "ghost.py")],
     }
 
 
@@ -399,6 +402,7 @@ def test_checker_node_silently_skips_path_outside_cwd(
         "feedback": [],
         "maker_checker_cycles": 0,
         "milestones": ["step 1"],
+        "session_files": [str(outside)],
     }
 
 
@@ -558,11 +562,66 @@ def test_checker_node_no_written_files_at_cycle_limit(tmp_path: pathlib.Path):
     assert result.get("plan_approved") is None
 
 
+def test_checker_node_passes_plan_and_feedback_to_checker_subagent(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "foo.py").write_text("x = 1")
+    state = make_state(
+        qa_output="",
+        written_files=[str(tmp_path / "foo.py")],
+        plan="step 1: build model",
+        feedback=["ignore coverage warnings"],
+    )
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ) as mock_checker:
+        agent.checker_node(state, make_config(), tmp_path)
+    assert mock_checker.call_args.kwargs.get("plan") == "step 1: build model"
+    assert mock_checker.call_args.kwargs.get("feedback") == ["ignore coverage warnings"]
+
+
+def test_checker_node_appends_session_files_on_clean_pass(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "foo.py").write_text("x = 1")
+    state = make_state(
+        qa_output="",
+        written_files=[str(tmp_path / "foo.py")],
+        plan="step 1",
+    )
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ):
+        result = agent.checker_node(state, make_config(), tmp_path)
+    assert result["session_files"] == [str(tmp_path / "foo.py")]
+
+
+def test_checker_node_does_not_append_session_files_on_issues(tmp_path: pathlib.Path):
+    state = make_state(qa_output="", written_files=["ghost.py"])
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=["unused import"]
+    ):
+        result = agent.checker_node(state, make_config(), tmp_path)
+    assert "session_files" not in result
+
+
 # ── messages accumulation ─────────────────────────────────────────────────
 
 
 def test_milestones_field_uses_add_reducer():
     annotated_args = T.get_args(agent.AgentState.__annotations__["milestones"])
+    assert operator.add in annotated_args
+
+
+def test_session_objectives_field_uses_add_reducer():
+    annotated_args = T.get_args(agent.AgentState.__annotations__["session_objectives"])
+    assert operator.add in annotated_args
+
+
+def test_session_files_field_uses_add_reducer():
+    annotated_args = T.get_args(agent.AgentState.__annotations__["session_files"])
     assert operator.add in annotated_args
 
 
