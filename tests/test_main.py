@@ -129,7 +129,7 @@ def test_init_sandbox_when_exists_returns_0_and_prints(
     assert "already exists" in capsys.readouterr().out.lower()
 
 
-def test_init_sandbox_when_not_exists_uses_non_interactive_command(
+def test_init_sandbox_when_not_exists_uses_kit_default_entrypoint(
     tmp_path: pathlib.Path,
 ):
     with unittest.mock.patch(
@@ -138,9 +138,10 @@ def test_init_sandbox_when_not_exists_uses_non_interactive_command(
     ) as mock_run:
         tern_main._init_sandbox(f"tern-{tmp_path.name}", tmp_path / ".tern")
     run_call = mock_run.call_args_list[1].args[0]
-    assert "sh" in run_call
-    assert "uv sync --quiet" in run_call[-1]
-    assert "tern _repl" not in run_call[-1]
+    assert run_call[:2] == ["sbx", "run"]
+    assert "--kit" in run_call
+    assert "sh" not in run_call
+    assert "-c" not in run_call
 
 
 def test_init_sandbox_when_not_exists_returns_sbx_exit_code(
@@ -235,17 +236,7 @@ def test_cmd_up_default_uses_non_interactive_sandbox_init(
             tern_main.cmd_up(argparse.Namespace())
     calls = [c.args[0] for c in mock_sbx_ok.call_args_list]
     assert ["sbx", "ls"] in calls
-    assert [
-        "sbx",
-        "run",
-        "--kit",
-        str(tmp_path / ".tern"),
-        "--name",
-        f"tern-{tmp_path.name}",
-        "sh",
-        "-c",
-        "uv sync --quiet",
-    ] in calls
+    assert ["sbx", "run", "--kit", str(tmp_path / ".tern"), "tern"] in calls
 
 
 def test_cmd_up_default_does_not_start_repl(tmp_path: pathlib.Path, mock_sbx_ok):

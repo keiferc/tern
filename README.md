@@ -14,10 +14,14 @@ Not an intern or an extern, just a tern: a provider-agnostic, human-in-the-loop,
     - Choose subagent models based on your risk level, task complexity, and cost (e.g., can use open source model for Summarizer subagent, GPT for Maker subagent, and Claude for Checker subagent)
     - Subagent personas and success rubrics are customizable
     - Customize your soft guardrails
+- Supported Model Providers
+    - Anthropic
+    - OpenAI
+    - Ollama (Pending)
 
 ## Requirements
 
-- [Docker Sandbox](https://www.docker.com/products/docker-sandboxes/) 0.28+
+- [Docker Sandbox (sbx)](https://www.docker.com/products/docker-sandboxes/) 0.28+
 - [uv](https://docs.astral.sh/uv/) 0.11+
 
 ## Download and Installation
@@ -26,21 +30,37 @@ Not an intern or an extern, just a tern: a provider-agnostic, human-in-the-loop,
 uv add "tern @ git+https://github.com/keiferc/tern.git"
 ```
 
-
 ## Usage
 
+### Quickstart
+
 ```bash
-usage: tern [-h] {up,down} ...
+uv run tern up
+echo $ANTHROPIC_API_KEY | sbx secret set tern-<PROJECT_DIR> anthropic
+uv run tern on
+```
+
+### Full Usage
+
+```bash
+usage: tern [-h] {up,on,down} ...
 
 Provider-agnostic multi-agent coding assistant
 
 positional arguments:
-  {up,down}
-    up        Start a tern session, initializing if needed
-    down      Remove initialized tern sandbox
+  {up,on,down}
+    up          Initialize scaffold and/or sandbox
+    on          Connect to sandbox and start REPL
+    down        Remove scaffold and/or sandbox
 
 options:
-  -h, --help  show this help message and exit
+  -h, --help    show this help message and exit
+
+subcommand flags:
+  up    --scaffold   initialize .tern/ scaffold only
+        --sandbox    initialize sandbox only
+  down  --scaffold   remove .tern/ scaffold only
+        --sandbox    remove sandbox only
 ```
 
 ### Customization
