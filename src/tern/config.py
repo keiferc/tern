@@ -82,15 +82,19 @@ def load_config(tern_dir: pathlib.Path) -> Config:
             raise ValueError(f"config.yaml missing required section: {section}")
 
     models = _get_mapping(raw, "models", "config.yaml models")
-    if "default" not in models:
-        raise ValueError("config.yaml missing required field: models.default")
+    for agent in sorted(VALID_AGENTS):
+        if agent not in models:
+            raise ValueError(f"config.yaml missing required field: models.{agent}")
 
     checker = _get_mapping(raw, "checker", "config.yaml checker")
     checker_tools = _get_list(checker, "tools", "config.yaml checker.tools")
 
     max_iterations = _get_mapping(raw, "max_iterations", "config.yaml max_iterations")
-    if "default" not in max_iterations:
-        raise ValueError("config.yaml missing required field: max_iterations.default")
+    for agent in sorted(VALID_AGENTS):
+        if agent not in max_iterations:
+            raise ValueError(
+                f"config.yaml missing required field: max_iterations.{agent}"
+            )
     if "maker_checker_cycles" not in max_iterations:
         raise ValueError(
             "config.yaml missing required field: max_iterations.maker_checker_cycles"

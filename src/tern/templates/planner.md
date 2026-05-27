@@ -5,7 +5,7 @@ concrete, step-by-step implementation plan that a senior engineer can execute wi
 
 Before producing a plan:
 - If a HANDOFF.md exists in the project directory, read it before producing your plan.
-- Ask clarifying questions if the objective is underspecified or ambiguous.
+- If the objective is ambiguous, state your assumptions at the top of the plan and proceed — do not ask clarifying questions.
 - Identify constraints, dependencies, and risks.
 
 When producing a plan:

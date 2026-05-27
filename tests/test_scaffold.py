@@ -20,12 +20,17 @@ def mock_sbx_ok():
         yield mock_run
 
 
+@pytest.fixture
+def scaffolded(tmp_path: pathlib.Path) -> pathlib.Path:
+    tern_dir = tmp_path / ".tern"
+    tern_scaffold.scaffold(tern_dir)
+    return tern_dir
+
+
 # ── scaffold ──────────────────────────────────────────────────────────────────
 
 
-def test_scaffold_creates_all_template_files(tmp_path: pathlib.Path):
-    tern_dir = tmp_path / ".tern"
-    tern_scaffold.scaffold(tern_dir)
+def test_scaffold_creates_all_template_files(scaffolded: pathlib.Path):
     expected = {
         "spec.yaml",
         "config.yaml",
@@ -35,51 +40,30 @@ def test_scaffold_creates_all_template_files(tmp_path: pathlib.Path):
         "checker.md",
         "summarizer.md",
     }
-    assert {f.name for f in tern_dir.iterdir()} == expected
+    assert {f.name for f in scaffolded.iterdir()} == expected
 
 
-def test_scaffold_config_yaml_content_matches_template(tmp_path: pathlib.Path):
-    tern_dir = tmp_path / ".tern"
-    tern_scaffold.scaffold(tern_dir)
+def test_scaffold_config_yaml_matches_template_bytes(scaffolded: pathlib.Path):
     template_bytes = (
         importlib.resources.files(tern_templates).joinpath("config.yaml").read_bytes()
     )
-    assert (tern_dir / "config.yaml").read_bytes() == template_bytes
+    assert (scaffolded / "config.yaml").read_bytes() == template_bytes
 
 
-def test_scaffold_config_yaml_is_valid(tmp_path: pathlib.Path):
-    tern_dir = tmp_path / ".tern"
-    tern_scaffold.scaffold(tern_dir)
-    cfg = tern_config.load_config(tern_dir)
-    assert cfg.models["default"] == "anthropic:claude-sonnet-4-6"
-
-
-def test_scaffold_config_yaml_checker_tools_match_template(tmp_path: pathlib.Path):
-    tern_dir = tmp_path / ".tern"
-    tern_scaffold.scaffold(tern_dir)
-    cfg = tern_config.load_config(tern_dir)
+def test_scaffold_config_yaml_is_valid(scaffolded: pathlib.Path):
+    cfg = tern_config.load_config(scaffolded)
     template = yaml.safe_load(
         importlib.resources.files(tern_templates).joinpath("config.yaml").read_bytes()
     )
+    assert cfg.models == template["models"]
     assert cfg.checker_tools == template["checker"]["tools"]
-
-
-def test_scaffold_config_yaml_max_iterations_match_template(tmp_path: pathlib.Path):
-    tern_dir = tmp_path / ".tern"
-    tern_scaffold.scaffold(tern_dir)
-    cfg = tern_config.load_config(tern_dir)
-    template = yaml.safe_load(
-        importlib.resources.files(tern_templates).joinpath("config.yaml").read_bytes()
-    )
     assert cfg.max_iterations == template["max_iterations"]
 
 
-def test_scaffold_spec_yaml_is_valid(tmp_path: pathlib.Path):
-    tern_dir = tmp_path / ".tern"
-    tern_scaffold.scaffold(tern_dir)
-    spec = tern_config.load_spec(tern_dir)
+def test_scaffold_spec_yaml_is_valid(scaffolded: pathlib.Path):
+    spec = tern_config.load_spec(scaffolded)
     assert spec.schema_version == "1"
-    assert spec.kind == "mixin"
+    assert spec.kind == "agent"
     assert spec.name == "tern"
     assert "api-inference.huggingface.co:443" in spec.allowed_domains
 

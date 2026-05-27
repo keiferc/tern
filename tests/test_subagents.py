@@ -22,9 +22,20 @@ def _write_tern_dir(tmp_path: pathlib.Path, override: str = "") -> pathlib.Path:
 
 def make_config() -> tern_config.Config:
     return tern_config.Config(
-        models={"default": "anthropic:claude-sonnet-4-6"},
+        models={
+            "planner": "anthropic:claude-sonnet-4-6",
+            "maker": "anthropic:claude-sonnet-4-6",
+            "checker": "anthropic:claude-sonnet-4-6",
+            "summarizer": "anthropic:claude-sonnet-4-6",
+        },
         checker_tools=[],
-        max_iterations={"default": 20, "maker_checker_cycles": 3},
+        max_iterations={
+            "planner": 20,
+            "maker": 20,
+            "checker": 10,
+            "summarizer": 5,
+            "maker_checker_cycles": 3,
+        },
     )
 
 
@@ -397,19 +408,12 @@ def test_planner_subagent_message_order_with_all_context(tmp_path: pathlib.Path)
     assert len(messages) == 5  # 4 input messages + 1 response appended by _react_loop
 
 
-@pytest.mark.parametrize(
-    "max_iterations",
-    [{"default": 0}, {"default": 20, "planner": 0}],
-    ids=["default", "per_agent"],
-)
-def test_planner_subagent_raises_if_max_iterations_zero(
-    max_iterations: dict, tmp_path: pathlib.Path
-):
+def test_planner_subagent_raises_if_max_iterations_zero(tmp_path: pathlib.Path):
     _write_tern_dir(tmp_path)
     config = tern_config.Config(
-        models={"default": "anthropic:claude-sonnet-4-6"},
+        models={"planner": "anthropic:claude-sonnet-4-6"},
         checker_tools=[],
-        max_iterations=max_iterations,
+        max_iterations={"planner": 0, "maker_checker_cycles": 3},
     )
     mock_model = _make_mock_model([])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
@@ -524,12 +528,13 @@ def test_maker_subagent_message_order_with_all_context(tmp_path: pathlib.Path):
         )
     messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
     assert isinstance(messages[0], lc_msg.SystemMessage)
-    assert isinstance(messages[1], lc_msg.HumanMessage)  # objective
-    assert isinstance(messages[2], lc_msg.AIMessage)  # plan
-    assert isinstance(messages[3], lc_msg.HumanMessage)  # issues + feedback combined
-    assert "Checker Issues" in messages[3].content
-    assert "Prior Feedback" in messages[3].content
-    assert len(messages) == 5  # 4 input messages + 1 response appended by _react_loop
+    assert isinstance(messages[1], lc_msg.HumanMessage)  # objective + plan
+    assert "build a classifier" in messages[1].content
+    assert "step 1: build model" in messages[1].content
+    assert isinstance(messages[2], lc_msg.HumanMessage)  # issues + feedback combined
+    assert "Checker Issues" in messages[2].content
+    assert "Prior Feedback" in messages[2].content
+    assert len(messages) == 4  # 3 input messages + 1 response appended by _react_loop
 
 
 # ── checker_subagent ──────────────────────────────────────────────────────────
@@ -586,18 +591,35 @@ def test_checker_subagent_executes_tool_call_and_continues(
 
 
 @pytest.mark.parametrize(
-    "max_iterations",
-    [{"default": 0}, {"default": 20, "checker": 0}],
-    ids=["default", "per_agent"],
+    "content",
+    [
+        "No issues found.",
+        "no issues",
+        "None",
+        "PASS",
+        "passed",
+        "LGTM",
+        "Clean",
+        "no issue found",
+        "no issues detected",
+    ],
 )
-def test_checker_subagent_raises_if_max_iterations_zero(
-    max_iterations: dict, tmp_path: pathlib.Path
+def test_checker_subagent_no_issue_phrase_returns_empty_list(
+    content: str, tmp_path: pathlib.Path
 ):
     _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response(content)])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        result = subagents.checker_subagent("", "", make_config(), tmp_path)
+    assert result == []
+
+
+def test_checker_subagent_raises_if_max_iterations_zero(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
     config = tern_config.Config(
-        models={"default": "anthropic:claude-sonnet-4-6"},
+        models={"checker": "anthropic:claude-sonnet-4-6"},
         checker_tools=[],
-        max_iterations=max_iterations,
+        max_iterations={"checker": 0, "maker_checker_cycles": 3},
     )
     mock_model = _make_mock_model([])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
@@ -616,7 +638,7 @@ def test_checker_subagent_human_message_contains_qa_output(tmp_path: pathlib.Pat
     human_content = messages[1].content
     assert isinstance(messages[1], lc_msg.HumanMessage)
     assert "ruff: all good" in human_content
-    assert "no preamble" in human_content
+    assert "no preamble" in human_content.lower()
 
 
 def test_checker_subagent_human_message_contains_file_contents(tmp_path: pathlib.Path):

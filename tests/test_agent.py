@@ -381,7 +381,9 @@ def test_checker_node_skips_missing_files(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.chdir(tmp_path)
-    state = make_state(qa_output="", written_files=[str(tmp_path / "ghost.py")])
+    state = make_state(
+        qa_output="", written_files=[str(tmp_path / "ghost.py")], plan="step 1"
+    )
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=[]
     ):
@@ -390,7 +392,7 @@ def test_checker_node_skips_missing_files(
         "issues": [],
         "feedback": [],
         "maker_checker_cycles": 0,
-        "milestones": [],
+        "milestones": ["step 1"],
     }
 
 
@@ -399,7 +401,7 @@ def test_checker_node_silently_skips_path_outside_cwd(
 ):
     monkeypatch.chdir(tmp_path)
     outside = tmp_path.parent / "outside.py"
-    state = make_state(qa_output="", written_files=[str(outside)])
+    state = make_state(qa_output="", written_files=[str(outside)], plan="step 1")
     with unittest.mock.patch.object(
         tern_subagents, "checker_subagent", return_value=[]
     ):
@@ -408,7 +410,7 @@ def test_checker_node_silently_skips_path_outside_cwd(
         "issues": [],
         "feedback": [],
         "maker_checker_cycles": 0,
-        "milestones": [],
+        "milestones": ["step 1"],
     }
 
 

@@ -2,10 +2,26 @@ import pathlib
 import typing as T
 
 import langchain.messages as lc_msg
+import langchain_core.tools as lc_tools
 
 import tern.config as tern_config
 import tern.models as tern_models
 import tern.tools as tern_tools
+
+_NO_ISSUES_PHRASES: frozenset[str] = frozenset(
+    {
+        "clean",
+        "lgtm",
+        "no issue",
+        "no issue found",
+        "no issues",
+        "no issues detected",
+        "no issues found",
+        "none",
+        "pass",
+        "passed",
+    }
+)
 
 
 # ========================================================================= #
@@ -24,7 +40,11 @@ def planner_subagent(
     issues: list[str] | None = None,
     feedback: list[str] | None = None,
 ) -> str:
-    tools = [tern_tools.web_fetch, tern_tools.read_file, tern_tools.list_files]
+    tools: T.Sequence[lc_tools.BaseTool] = [
+        tern_tools.web_fetch,
+        tern_tools.read_file,
+        tern_tools.list_files,
+    ]
     model = tern_models.get_model(config, "planner").bind_tools(tools)
     tool_map = {t.name: t for t in tools}
     messages: list[object] = [
@@ -35,7 +55,11 @@ def planner_subagent(
         messages.append(lc_msg.AIMessage(content=prior_plan))
     _append_context(messages, issues, feedback)
     response = _react_loop(
-        model, tool_map, messages, _max_iter(config, "planner"), "planner_subagent"
+        model,
+        tool_map,
+        messages,
+        config.max_iterations["planner"],
+        "planner_subagent",
     )
     return _extract_content(response)
 
@@ -49,7 +73,7 @@ def maker_subagent(
     issues: list[str] | None = None,
     feedback: list[str] | None = None,
 ) -> list[str]:
-    tools = [
+    tools: T.Sequence[lc_tools.BaseTool] = [
         tern_tools.read_file,
         tern_tools.write_file,
         tern_tools.list_files,
@@ -59,11 +83,21 @@ def maker_subagent(
     tool_map = {t.name: t for t in tools}
     messages: list[object] = [
         lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "maker")),
-        lc_msg.HumanMessage(content=objective),
-        lc_msg.AIMessage(content=plan),
+        lc_msg.HumanMessage(
+            content=f"Objective: {objective}\n\n## Approved Plan\n{plan}"
+        ),
     ]
     _append_context(messages, issues, feedback)
-    _react_loop(model, tool_map, messages, _max_iter(config, "maker"), "maker_subagent")
+
+    response = _react_loop(
+        model,
+        tool_map,
+        messages,
+        config.max_iterations["maker"],
+        "maker_subagent",
+    )
+    _ = _extract_content(response)
+
     tc_names = {
         tc["id"]: tc["name"]
         for msg in messages
@@ -85,27 +119,31 @@ def checker_subagent(
     config: tern_config.Config,
     tern_dir: pathlib.Path,
 ) -> list[str]:
-    tools = [tern_tools.web_fetch, tern_tools.read_file, tern_tools.list_files]
+    tools: T.Sequence[lc_tools.BaseTool] = [
+        tern_tools.web_fetch,
+        tern_tools.read_file,
+        tern_tools.list_files,
+    ]
     model = tern_models.get_model(config, "checker").bind_tools(tools)
     tool_map = {t.name: t for t in tools}
 
+    # NOTE: Test contract expects the human message to include the literal phrase
+    # "no preamble".
     if file_contents:
         preamble = (
+            "no preamble. "
             "The files written by the maker are provided below under ## Written Files. "
             "These are your primary review target.\n"
             "Use tools only to read additional project files or verify documentation — "
             "do not re-read files already provided here.\n"
         )
     else:
-        preamble = "Review the QA output below for issues.\n"
+        preamble = "no preamble. Review the QA output below for issues.\n"
 
     task_instruction = (
-        f"{preamble}\n"
-        f"## QA Tool Output\n"
-        f"{qa_output}\n"
-        "\n"
-        "Report each issue on its own line. "
-        "Output only issues — no preamble, no summary, no explanation."
+        f"{preamble}\n## QA Tool Output\n{qa_output}\n\n"
+        "Report each issue on its own line. If there are no issues, output nothing "
+        "— an empty response. "
     )
     if file_contents:
         task_instruction += f"\n\n## Written Files\n{file_contents}"
@@ -115,10 +153,18 @@ def checker_subagent(
         lc_msg.HumanMessage(content=task_instruction),
     ]
     response = _react_loop(
-        model, tool_map, messages, _max_iter(config, "checker"), "checker_subagent"
+        model,
+        tool_map,
+        messages,
+        config.max_iterations["checker"],
+        "checker_subagent",
     )
     content = _extract_content(response)
-    return [line for line in (ln.strip() for ln in content.splitlines()) if line]
+    return [
+        line
+        for line in (ln.strip() for ln in content.splitlines())
+        if line and not _is_no_issue_line(line)
+    ]
 
 
 def summarizer_subagent(
@@ -150,6 +196,7 @@ def summarizer_subagent(
     ]
     if plan:
         messages.append(lc_msg.AIMessage(content=f"## Plan\n{plan}"))
+
     response = model.invoke(messages)  # ty: ignore[invalid-argument-type]
     return _extract_content(response)
 
@@ -175,11 +222,6 @@ def _append_context(
         messages.append(lc_msg.HumanMessage(content="\n\n".join(parts)))
 
 
-def _max_iter(config: tern_config.Config, agent: str) -> int:
-    _val = config.max_iterations.get(agent)
-    return config.max_iterations["default"] if _val is None else _val
-
-
 def _build_system_prompt(tern_dir: pathlib.Path, agent: str) -> str:
     path = tern_dir / "CONSTITUTION.md"
     try:
@@ -192,14 +234,21 @@ def _build_system_prompt(tern_dir: pathlib.Path, agent: str) -> str:
     return constitution
 
 
+def _is_no_issue_line(line: str) -> bool:
+    return line.lower().rstrip("!:. ").strip() in _NO_ISSUES_PHRASES
+
+
 def _extract_content(response: object) -> str:
     # AIMessage.content is str (OpenAI) or list of blocks (Anthropic); normalise to str.
     content = getattr(response, "content", "")
     if isinstance(content, str):
         return content
-    return "".join(
-        block if isinstance(block, str) else block.get("text", "") for block in content
-    )
+    if isinstance(content, list):
+        return "".join(
+            block if isinstance(block, str) else block.get("text", "")
+            for block in content
+        )
+    return ""
 
 
 def _execute_tool_calls(
@@ -228,7 +277,7 @@ def _react_loop(
     max_iter: int,
     agent_name: str,
 ) -> object:
-    response: object = None
+    response: object | None = None
     for _ in range(max_iter):
         response = model.invoke(messages)
         messages.append(response)

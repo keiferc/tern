@@ -1,8 +1,58 @@
 schemaVersion: "1"
-kind: mixin
+kind: agent
 name: tern
 
+agent:
+  image: ghcr.io/keiferc/tern:0.1.0
+  persistence: persistent
+  entrypoint:
+    run: ["sh", "-c", "uv sync --quiet && /home/agent/.venv/bin/tern _repl"]
+
+credentials:
+  sources:
+    anthropic:
+      env: [ANTHROPIC_API_KEY]
+    openai:
+      env: [OPENAI_API_KEY]
+    google:
+      env: [GOOGLE_API_KEY, GEMINI_API_KEY]
+    xai:
+      env: [XAI_API_KEY]
+    mistral:
+      env: [MISTRAL_API_KEY]
+
+environment:
+  proxyManaged:
+    - ANTHROPIC_API_KEY
+    - OPENAI_API_KEY
+    - GOOGLE_API_KEY
+    - GEMINI_API_KEY
+    - XAI_API_KEY
+    - MISTRAL_API_KEY
+
 network:
+  serviceDomains:
+    api.anthropic.com: anthropic
+    api.openai.com: openai
+    generativelanguage.googleapis.com: google
+    api.x.ai: xai
+    api.mistral.ai: mistral
+  serviceAuth:
+    anthropic:
+      headerName: x-api-key
+      valueFormat: "%s"
+    openai:
+      headerName: Authorization
+      valueFormat: "Bearer %s"
+    google:
+      headerName: x-goog-api-key
+      valueFormat: "%s"
+    xai:
+      headerName: Authorization
+      valueFormat: "Bearer %s"
+    mistral:
+      headerName: Authorization
+      valueFormat: "Bearer %s"
   allowedDomains:
     # ai services
     - "**.chatgpt.com:443"
@@ -10,9 +60,7 @@ network:
     - "**.factory.ai:443"
     - "**.oaistatic.com:443"
     - "**.oaiusercontent.com:443"
-    - "**.openai.com:443"
     - "api-inference.huggingface.co:443"
-    - "api.anthropic.com:443"
     - "api.perplexity.ai:443"
     - "api.workos.com:443"
     - "cdn.openaimerge.com:443"

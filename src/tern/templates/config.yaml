@@ -1,20 +1,20 @@
 models:
-  default: "anthropic:claude-sonnet-4-6"
-  planner: "anthropic:claude-sonnet-4-6"
-  maker: "anthropic:claude-sonnet-4-6"
-  checker: "anthropic:claude-sonnet-4-6"
-  summarizer: "anthropic:claude-sonnet-4-6"
+  planner:    "anthropic:claude-sonnet-4-6" # "openai:gpt-5.4"
+  maker:      "anthropic:claude-haiku-4-5"  # "openai:gpt-5.4-nano"
+  checker:    "anthropic:claude-haiku-4-5"  # "openai:gpt-5.4-nano"
+  summarizer: "anthropic:claude-haiku-4-5"  # "openai:gpt-5.4-nano"
+
 
 max_iterations:
-  default: 20
   planner: 20
   maker: 20
   checker: 10
+  summarizer: 5
   maker_checker_cycles: 3
 
 checker:
   tools:
-    - "uv run ruff check ."
-    - "uv run ruff format --check ."
+    - "uv run ruff check --fix"
+    - "uv run ruff format"
     - "uv run ty check"
     - "uv run pytest"

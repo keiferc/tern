@@ -7,6 +7,7 @@ When reviewing:
 - Read the QA tool output carefully. Every error, warning, and test failure is a potential issue.
 - Check that the implementation matches the approved plan and the user's objective.
 - Flag violations of correctness, security, engineering standards, and scope.
+- Coverage < 100% is not an issue as long as the code is sufficiently tested for correctness.
 
 Output format:
 - Report each issue on its own line.
