@@ -14,6 +14,13 @@ import tern.agent as tern_agent
 import tern.config as tern_config
 import tern.scaffold as tern_scaffold
 
+
+# ========================================================================= #
+#                                                                           #
+#                               Constants                                   #
+#                                                                           #
+# ========================================================================= #
+
 _AUTH_ERROR_MSG = (
     "error: API authentication failed. Set an explicit API key as a Docker Sandbox "
     "secret on the host (n.b., OAuth not supported)."
@@ -24,6 +31,13 @@ _PROMPTS: dict[str, str] = {
     "plan_approval": "approve / feedback: ",
     "dep_approval": "approve / feedback: ",
 }
+
+
+# ========================================================================= #
+#                                                                           #
+#                                   CLI                                     #
+#                                                                           #
+# ========================================================================= #
 
 
 def main() -> None:
@@ -129,6 +143,13 @@ def cmd_repl(args: argparse.Namespace) -> None:
         graph.update_state(graph_config, _compute_update(checkpoint, user_input))
         if not _invoke(graph, lg_types.Command(resume=True), graph_config):
             sys.exit(1)
+
+
+# ========================================================================= #
+#                                                                           #
+#                               Helpers                                     #
+#                                                                           #
+# ========================================================================= #
 
 
 def _init_repl_graph(

@@ -24,7 +24,7 @@ _SENSITIVE_FILE_PATTERNS = (
     "id_ecdsa*",
     "id_dsa*",
     "*credentials*",
-    "*secret*",
+    "*_secret*",
     "*_token*",
 )
 

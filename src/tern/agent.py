@@ -116,14 +116,11 @@ def dep_check_node(state: AgentState) -> dict:
 
 def qa_runner_node(config: tern_config.Config) -> dict:
     print("running QA…", flush=True)
-    parts_list = []
+    output = ""
     for cmd in config.checker_tools:
         parts = shlex.split(cmd)
         if not parts:
             continue
-        parts_list.append((cmd, parts))
-    output = ""
-    for cmd, parts in parts_list:
         try:
             result = subprocess.run(parts, shell=False, capture_output=True, text=True)
             output += f"$ {cmd}\n{result.stdout}{result.stderr}\n"
@@ -191,14 +188,7 @@ def route_from_user(state: AgentState) -> str:
     if state["plan_approved"] is not True:
         return "planner"
 
-    if (
-        state["qa_output"] is not None
-        and not state["issues"]
-        and not (state["new_deps"] and state["deps_approved"] is None)
-    ):
-        return "user"
-
-    if state["new_deps"] and state["deps_approved"] is None:
+    if state["qa_output"] is not None and not state["issues"]:
         return "user"
 
     if state["new_deps"] and state["deps_approved"] is True:

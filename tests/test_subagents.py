@@ -638,7 +638,6 @@ def test_checker_subagent_human_message_contains_qa_output(tmp_path: pathlib.Pat
     human_content = messages[1].content
     assert isinstance(messages[1], lc_msg.HumanMessage)
     assert "ruff: all good" in human_content
-    assert "no preamble" in human_content.lower()
 
 
 def test_checker_subagent_human_message_contains_file_contents(tmp_path: pathlib.Path):

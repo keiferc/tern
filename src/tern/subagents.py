@@ -127,8 +127,6 @@ def checker_subagent(
     model = tern_models.get_model(config, "checker").bind_tools(tools)
     tool_map = {t.name: t for t in tools}
 
-    # NOTE: Test contract expects the human message to include the literal phrase
-    # "no preamble".
     if file_contents:
         preamble = (
             "no preamble. "

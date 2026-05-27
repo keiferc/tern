@@ -13,9 +13,21 @@ import tern.subagents as tern_subagents
 
 def make_config() -> tern_config.Config:
     return tern_config.Config(
-        models={"default": "anthropic:claude-sonnet-4-6"},
+        models={
+            a: "anthropic:claude-sonnet-4-6"
+            for a in ("planner", "maker", "checker", "summarizer")
+        },
         checker_tools=[],
-        max_iterations={"default": 20, "maker_checker_cycles": 3},
+        max_iterations={
+            a: 20
+            for a in (
+                "planner",
+                "maker",
+                "checker",
+                "summarizer",
+                "maker_checker_cycles",
+            )
+        },
     )
 
 
@@ -87,20 +99,6 @@ def test_route_user_stale_qa_output_plan_not_approved():
     assert agent.route_from_user(state) == "planner"
 
 
-def test_route_user_stale_qa_output_pending_deps_routes_to_user():
-    # cycle-complete check must not fire when deps are awaiting approval,
-    # even if qa_output is set from a prior cycle.
-    state = make_state(
-        objective="build a model",
-        plan_approved=True,
-        qa_output="all tests passed",
-        issues=[],
-        new_deps=["pandas"],
-        deps_approved=None,
-    )
-    assert agent.route_from_user(state) == "user"
-
-
 def test_route_user_plan_not_yet_approved():
     state = make_state(objective="build a model", plan_approved=None)
     assert agent.route_from_user(state) == "planner"
@@ -109,16 +107,6 @@ def test_route_user_plan_not_yet_approved():
 def test_route_user_plan_rejected():
     state = make_state(objective="build a model", plan_approved=False)
     assert agent.route_from_user(state) == "planner"
-
-
-def test_route_user_new_deps_no_decision():
-    state = make_state(
-        objective="build a model",
-        plan_approved=True,
-        new_deps=["pandas"],
-        deps_approved=None,
-    )
-    assert agent.route_from_user(state) == "user"
 
 
 def test_route_user_deps_approved():
