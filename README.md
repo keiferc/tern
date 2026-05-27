@@ -13,7 +13,7 @@ Not an intern or an extern, just a tern: a provider-agnostic, human-in-the-loop,
 - Customizability
     - Choose subagent models based on your risk level, task complexity, and cost (e.g., can use open source model for Summarizer subagent, GPT for Maker subagent, and Claude for Checker subagent)
     - Subagent personas and success rubrics are customizable
-    - Customize your soft guardrails and boot instructions
+    - Customize your soft guardrails
 
 ## Requirements
 
