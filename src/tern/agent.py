@@ -11,6 +11,7 @@ import langgraph.graph.state as lg_state
 
 import tern.config as tern_config
 import tern.subagents as tern_subagents
+import tern.ui as tern_ui
 
 # ========================================================================= #
 #                                                                           #
@@ -68,7 +69,7 @@ def user_node(state: AgentState) -> dict:
 def planner_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
-    print("planning…", flush=True)
+    tern_ui.print_stage("Planning")
     plan = tern_subagents.planner_subagent(
         state["objective"],  # ty: ignore[invalid-argument-type]
         config,
@@ -90,7 +91,7 @@ def planner_node(
 def maker_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
-    print("implementing…", flush=True)
+    tern_ui.print_stage("Implementing")
     files = tern_subagents.maker_subagent(
         state["objective"],  # ty: ignore[invalid-argument-type]
         state["plan"],  # ty: ignore[invalid-argument-type]
@@ -106,7 +107,7 @@ def maker_node(
 
 
 def dep_check_node(state: AgentState) -> dict:
-    print("checking dependencies…", flush=True)
+    tern_ui.print_stage("Reviewing")
     cwd = pathlib.Path.cwd()
     pyproject = tomllib.loads((cwd / "pyproject.toml").read_text(encoding="utf-8"))
     raw_deps = pyproject.get("project", {}).get("dependencies", [])
@@ -119,7 +120,6 @@ def dep_check_node(state: AgentState) -> dict:
 
 
 def qa_runner_node(config: tern_config.Config) -> dict:
-    print("running QA…", flush=True)
     output = ""
     for cmd in config.checker_tools:
         parts = shlex.split(cmd)
@@ -136,9 +136,9 @@ def qa_runner_node(config: tern_config.Config) -> dict:
 def checker_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
-    print("reviewing…", flush=True)
     if not state["written_files"]:
         issues = ["Maker wrote no files. Use write_file to implement the plan."]
+        print(f"  - {issues[0]}")
         if (
             state["maker_checker_cycles"]
             >= config.max_iterations["maker_checker_cycles"]
@@ -155,6 +155,7 @@ def checker_node(
         feedback=state["feedback"],
     )
     if not issues:
+        print("  done — no issues")
         return {
             "issues": [],
             "feedback": [],
@@ -162,6 +163,8 @@ def checker_node(
             "milestones": [state["plan"]],
             "session_files": state["written_files"],
         }
+    for issue in issues:
+        print(f"  - {issue}")
     if state["maker_checker_cycles"] >= config.max_iterations["maker_checker_cycles"]:
         return {"issues": issues, "plan_approved": None, "feedback": []}
     return {"issues": issues, "feedback": []}
@@ -170,7 +173,7 @@ def checker_node(
 def summarizer_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
-    print("generating handoff…", flush=True)
+    tern_ui.print_stage("Generating handoff")
     doc = tern_subagents.summarizer_subagent(
         dict(state), _read_file_contents(state["session_files"]), config, tern_dir
     )

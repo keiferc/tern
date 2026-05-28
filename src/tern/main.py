@@ -181,6 +181,11 @@ def cmd_down(args: argparse.Namespace) -> None:
 
 
 def cmd_repl(args: argparse.Namespace) -> None:
+    try:
+        import readline  # noqa: F401
+    except ImportError:
+        pass
+
     if not os.environ.get("SANDBOX_VM_ID"):
         print("error: tern _repl must be run inside a Docker Sandbox")
         sys.exit(1)
@@ -287,6 +292,9 @@ def _invoke(
     except Exception as exc:
         if _is_auth_error(exc):
             print(_AUTH_ERROR_MSG, file=sys.stderr)
+            return False
+        if isinstance(exc, RuntimeError):
+            print(f"error: {exc}", file=sys.stderr)
             return False
         raise
 

@@ -670,10 +670,20 @@ def test_invoke_returns_false_and_prints_on_auth_error(
     assert "API authentication failed" in capsys.readouterr().err
 
 
-def test_invoke_re_raises_non_auth_error():
+def test_invoke_returns_false_and_prints_on_runtime_error(
+    capsys: pytest.CaptureFixture,
+):
     mock_graph = unittest.mock.MagicMock()
-    mock_graph.invoke.side_effect = RuntimeError("network error")
-    with pytest.raises(RuntimeError):
+    mock_graph.invoke.side_effect = RuntimeError("model returned empty stream")
+    result = tern_main._invoke(mock_graph, None, {})
+    assert result is False
+    assert "model returned empty stream" in capsys.readouterr().err
+
+
+def test_invoke_re_raises_non_runtime_non_auth_error():
+    mock_graph = unittest.mock.MagicMock()
+    mock_graph.invoke.side_effect = ValueError("unexpected state")
+    with pytest.raises(ValueError):
         tern_main._invoke(mock_graph, None, {})
 
 

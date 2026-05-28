@@ -43,13 +43,13 @@ def _make_mock_model(responses: list[object]) -> unittest.mock.MagicMock:
     mock_model = unittest.mock.MagicMock()
     mock_model_with_tools = unittest.mock.MagicMock()
     mock_model.bind_tools.return_value = mock_model_with_tools
-    mock_model_with_tools.invoke.side_effect = responses
+    mock_model_with_tools.stream.side_effect = [iter([r]) for r in responses]
     return mock_model
 
 
 def _make_mock_model_no_tools(responses: list[object]) -> unittest.mock.MagicMock:
     mock_model = unittest.mock.MagicMock()
-    mock_model.invoke.side_effect = responses
+    mock_model.stream.side_effect = [iter([r]) for r in responses]
     return mock_model
 
 
@@ -146,6 +146,158 @@ def test_execute_tool_calls_appends_error_for_unknown_tool():
     assert "unknown tool" in messages[0].content
 
 
+# ── _key_arg ─────────────────────────────────────────────────────────────────
+
+
+def test_key_arg_returns_path_when_present():
+    assert subagents._key_arg({"path": "src/foo.py", "url": "http://x"}) == "src/foo.py"
+
+
+def test_key_arg_falls_back_to_url():
+    assert (
+        subagents._key_arg({"url": "https://docs.python.org"})
+        == "https://docs.python.org"
+    )
+
+
+def test_key_arg_returns_empty_when_neither():
+    assert subagents._key_arg({"content": "x = 1"}) == ""
+
+
+def test_key_arg_returns_empty_for_empty_dict():
+    assert subagents._key_arg({}) == ""
+
+
+# ── _extract_stream_text ──────────────────────────────────────────────────────
+
+
+def test_extract_stream_text_str_content():
+    chunk = unittest.mock.MagicMock()
+    chunk.content = "hello"
+    assert subagents._extract_stream_text(chunk) == "hello"
+
+
+def test_extract_stream_text_list_content_filters_text_blocks():
+    chunk = unittest.mock.MagicMock()
+    chunk.content = [
+        {"type": "text", "text": "hello "},
+        {"type": "tool_use", "text": "ignored"},
+        {"type": "text", "text": "world"},
+    ]
+    assert subagents._extract_stream_text(chunk) == "hello world"
+
+
+def test_extract_stream_text_list_content_non_text_only_returns_empty():
+    chunk = unittest.mock.MagicMock()
+    chunk.content = [{"type": "tool_use", "input": "{}"}]
+    assert subagents._extract_stream_text(chunk) == ""
+
+
+def test_extract_stream_text_no_content_attr():
+    assert subagents._extract_stream_text(object()) == ""
+
+
+# ── _invoke_streaming ─────────────────────────────────────────────────────────
+
+
+def test_invoke_streaming_writes_text_to_stdout(capsys: pytest.CaptureFixture):
+    chunk = _mock_response("hello world")
+    mock_model = unittest.mock.MagicMock()
+    mock_model.stream.return_value = iter([chunk])
+    messages: list[object] = []
+
+    subagents._invoke_streaming(mock_model, messages, "test")
+
+    assert "hello world" in capsys.readouterr().out
+
+
+def test_invoke_streaming_prints_newline_after_content(capsys: pytest.CaptureFixture):
+    chunk = _mock_response("text")
+    mock_model = unittest.mock.MagicMock()
+    mock_model.stream.return_value = iter([chunk])
+    messages: list[object] = []
+
+    subagents._invoke_streaming(mock_model, messages, "test")
+
+    assert capsys.readouterr().out.endswith("\n")
+
+
+def test_invoke_streaming_no_newline_when_no_text(capsys: pytest.CaptureFixture):
+    chunk = _mock_response("")
+    mock_model = unittest.mock.MagicMock()
+    mock_model.stream.return_value = iter([chunk])
+    messages: list[object] = []
+
+    subagents._invoke_streaming(mock_model, messages, "test")
+
+    assert capsys.readouterr().out == ""
+
+
+def test_invoke_streaming_appends_response_to_messages():
+    chunk = _mock_response("hello")
+    mock_model = unittest.mock.MagicMock()
+    mock_model.stream.return_value = iter([chunk])
+    messages: list[object] = []
+
+    result = subagents._invoke_streaming(mock_model, messages, "test")
+
+    assert messages[-1] is result
+
+
+def test_invoke_streaming_raises_on_empty_stream():
+    mock_model = unittest.mock.MagicMock()
+    mock_model.stream.return_value = iter([])
+
+    with pytest.raises(RuntimeError, match="empty stream"):
+        subagents._invoke_streaming(mock_model, [], "test_agent")
+
+
+# ── _execute_tool_calls (print) ───────────────────────────────────────────────
+
+
+def test_execute_tool_calls_prints_arrow_with_tool_name_and_path(
+    capsys: pytest.CaptureFixture,
+):
+    tool = unittest.mock.MagicMock()
+    tool.invoke.return_value = "ok"
+    subagents._execute_tool_calls(
+        {"read_file": tool},
+        [{"name": "read_file", "args": {"path": "src/foo.py"}, "id": "tc1"}],
+        [],
+    )
+    assert "  → read_file(src/foo.py)" in capsys.readouterr().out
+
+
+def test_execute_tool_calls_prints_arrow_with_url(capsys: pytest.CaptureFixture):
+    tool = unittest.mock.MagicMock()
+    tool.invoke.return_value = "ok"
+    subagents._execute_tool_calls(
+        {"web_fetch": tool},
+        [
+            {
+                "name": "web_fetch",
+                "args": {"url": "https://docs.python.org"},
+                "id": "tc1",
+            }
+        ],
+        [],
+    )
+    assert "  → web_fetch(https://docs.python.org)" in capsys.readouterr().out
+
+
+def test_execute_tool_calls_prints_arrow_empty_arg_when_no_path_or_url(
+    capsys: pytest.CaptureFixture,
+):
+    tool = unittest.mock.MagicMock()
+    tool.invoke.return_value = "ok"
+    subagents._execute_tool_calls(
+        {"list_files": tool},
+        [{"name": "list_files", "args": {}, "id": "tc1"}],
+        [],
+    )
+    assert "  → list_files()" in capsys.readouterr().out
+
+
 # ── _react_loop ───────────────────────────────────────────────────────────────
 
 
@@ -155,7 +307,7 @@ def test_react_loop_raises_runtime_error_when_exhausted_with_pending_tool_calls(
         tool_calls=[{"name": "some_tool", "args": {}, "id": "tc1"}],
     )
     mock_model = unittest.mock.MagicMock()
-    mock_model.invoke.side_effect = [always_tool, always_tool]
+    mock_model.stream.side_effect = [iter([always_tool]), iter([always_tool])]
 
     with pytest.raises(RuntimeError, match="max_iterations exhausted"):
         subagents._react_loop(mock_model, {}, [unittest.mock.MagicMock()], 2, "agent")
@@ -170,7 +322,7 @@ def test_react_loop_converts_tool_exception_to_error_message():
     )
     final_resp = _mock_response("done")
     mock_model = unittest.mock.MagicMock()
-    mock_model.invoke.side_effect = [tool_resp, final_resp]
+    mock_model.stream.side_effect = [iter([tool_resp]), iter([final_resp])]
     messages: list[object] = [unittest.mock.MagicMock()]
 
     subagents._react_loop(
@@ -189,7 +341,7 @@ def test_react_loop_appends_error_for_unknown_tool():
     )
     final_resp = _mock_response("done")
     mock_model = unittest.mock.MagicMock()
-    mock_model.invoke.side_effect = [tool_resp, final_resp]
+    mock_model.stream.side_effect = [iter([tool_resp]), iter([final_resp])]
     messages: list[object] = [unittest.mock.MagicMock()]
 
     subagents._react_loop(mock_model, {}, messages, 3, "agent")
@@ -285,7 +437,7 @@ def test_planner_subagent_executes_tool_call_and_continues(
         )
 
     assert result == "Final plan"
-    assert mock_model.bind_tools.return_value.invoke.call_count == 2
+    assert mock_model.bind_tools.return_value.stream.call_count == 2
 
 
 def test_planner_subagent_includes_prior_plan_in_messages(tmp_path: pathlib.Path):
@@ -295,7 +447,7 @@ def test_planner_subagent_includes_prior_plan_in_messages(tmp_path: pathlib.Path
         subagents.planner_subagent(
             "build a classifier", make_config(), tmp_path, prior_plan="old plan"
         )
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     ai_msgs = [m for m in messages if isinstance(m, lc_msg.AIMessage)]
     assert len(ai_msgs) == 1
     assert ai_msgs[0].content == "old plan"
@@ -311,7 +463,7 @@ def test_planner_subagent_omits_feedback_when_absent(
         subagents.planner_subagent(
             "build a classifier", make_config(), tmp_path, feedback=feedback
         )
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
     assert not any("Prior Feedback" in m.content for m in human_msgs)
 
@@ -326,7 +478,7 @@ def test_planner_subagent_includes_feedback_section(tmp_path: pathlib.Path):
             tmp_path,
             feedback=["fix the imports", "add type hints"],
         )
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
     feedback_msg = next(m for m in human_msgs if "Prior Feedback" in m.content)
     assert "fix the imports" in feedback_msg.content
@@ -346,7 +498,7 @@ def test_planner_subagent_message_order_with_prior_plan_and_feedback(
             prior_plan="old plan",
             feedback=["fix the imports"],
         )
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     assert isinstance(messages[0], lc_msg.SystemMessage)
     assert isinstance(messages[1], lc_msg.HumanMessage)
     assert isinstance(messages[2], lc_msg.AIMessage)
@@ -364,7 +516,7 @@ def test_planner_subagent_omits_issues_when_absent(
         subagents.planner_subagent(
             "build a classifier", make_config(), tmp_path, issues=issues
         )
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
     assert not any("Checker Issues" in m.content for m in human_msgs)
 
@@ -379,7 +531,7 @@ def test_planner_subagent_includes_checker_issues_section(tmp_path: pathlib.Path
             tmp_path,
             issues=["unused import on line 3", "missing type hint on foo"],
         )
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
     issues_msg = next(m for m in human_msgs if "Checker Issues" in m.content)
     assert "unused import on line 3" in issues_msg.content
@@ -398,7 +550,7 @@ def test_planner_subagent_message_order_with_all_context(tmp_path: pathlib.Path)
             issues=["unused import"],
             feedback=["fix the imports"],
         )
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     assert isinstance(messages[0], lc_msg.SystemMessage)
     assert isinstance(messages[1], lc_msg.HumanMessage)  # objective
     assert isinstance(messages[2], lc_msg.AIMessage)  # prior_plan
@@ -460,7 +612,7 @@ def test_maker_subagent_includes_issues_section(tmp_path: pathlib.Path):
             tmp_path,
             issues=["unused import on line 3"],
         )
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
     issues_msg = next(m for m in human_msgs if "Checker Issues" in m.content)
     assert "unused import on line 3" in issues_msg.content
@@ -476,7 +628,7 @@ def test_maker_subagent_omits_issues_section_when_absent(
         subagents.maker_subagent(
             "build a classifier", "step 1", make_config(), tmp_path, issues=issues
         )
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
     assert not any("Checker Issues" in m.content for m in human_msgs)
 
@@ -492,7 +644,7 @@ def test_maker_subagent_includes_feedback_section(tmp_path: pathlib.Path):
             tmp_path,
             feedback=["add type hints", "avoid pandas"],
         )
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
     feedback_msg = next(m for m in human_msgs if "Prior Feedback" in m.content)
     assert "add type hints" in feedback_msg.content
@@ -509,7 +661,7 @@ def test_maker_subagent_omits_feedback_section_when_absent(
         subagents.maker_subagent(
             "build a classifier", "step 1", make_config(), tmp_path, feedback=feedback
         )
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
     assert not any("Prior Feedback" in m.content for m in human_msgs)
 
@@ -526,7 +678,7 @@ def test_maker_subagent_message_order_with_all_context(tmp_path: pathlib.Path):
             issues=["unused import"],
             feedback=["add type hints"],
         )
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     assert isinstance(messages[0], lc_msg.SystemMessage)
     assert isinstance(messages[1], lc_msg.HumanMessage)  # objective + plan
     assert "build a classifier" in messages[1].content
@@ -587,7 +739,7 @@ def test_checker_subagent_executes_tool_call_and_continues(
         result = subagents.checker_subagent("", "", make_config(), tmp_path)
 
     assert result == ["issue one"]
-    assert mock_model.bind_tools.return_value.invoke.call_count == 2
+    assert mock_model.bind_tools.return_value.stream.call_count == 2
 
 
 @pytest.mark.parametrize(
@@ -634,7 +786,7 @@ def test_checker_subagent_includes_plan_in_task_instruction(tmp_path: pathlib.Pa
         subagents.checker_subagent(
             "", "", make_config(), tmp_path, plan="step 1: build model"
         )
-    human_content = mock_model.bind_tools.return_value.invoke.call_args[0][0][1].content
+    human_content = mock_model.bind_tools.return_value.stream.call_args[0][0][1].content
     assert "step 1: build model" in human_content
 
 
@@ -645,7 +797,7 @@ def test_checker_subagent_includes_feedback_in_task_instruction(tmp_path: pathli
         subagents.checker_subagent(
             "", "", make_config(), tmp_path, feedback=["ignore coverage warnings"]
         )
-    human_content = mock_model.bind_tools.return_value.invoke.call_args[0][0][1].content
+    human_content = mock_model.bind_tools.return_value.stream.call_args[0][0][1].content
     assert "ignore coverage warnings" in human_content
 
 
@@ -656,7 +808,7 @@ def test_checker_subagent_human_message_contains_qa_output(tmp_path: pathlib.Pat
         subagents.checker_subagent(
             "ruff: all good", "=== foo.py ===\nx=1", make_config(), tmp_path
         )
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     human_content = messages[1].content
     assert isinstance(messages[1], lc_msg.HumanMessage)
     assert "ruff: all good" in human_content
@@ -667,7 +819,7 @@ def test_checker_subagent_human_message_contains_file_contents(tmp_path: pathlib
     mock_model = _make_mock_model([_mock_response("")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.checker_subagent("", "=== foo.py ===\nx=1", make_config(), tmp_path)
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     assert isinstance(messages[1], lc_msg.HumanMessage)
     assert "=== foo.py ===" in messages[1].content
     ai_msgs = [m for m in messages if isinstance(m, lc_msg.AIMessage)]
@@ -679,7 +831,7 @@ def test_checker_subagent_omits_ai_message_when_no_files(tmp_path: pathlib.Path)
     mock_model = _make_mock_model([_mock_response("")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.checker_subagent("", "", make_config(), tmp_path)
-    messages = mock_model.bind_tools.return_value.invoke.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     ai_msgs = [m for m in messages if isinstance(m, lc_msg.AIMessage)]
     assert len(ai_msgs) == 0
 
@@ -711,7 +863,7 @@ def test_summarizer_subagent_includes_objective_in_prompt(tmp_path: pathlib.Path
             make_config(),
             tmp_path,
         )
-    human_content = mock_model.invoke.call_args[0][0][1].content
+    human_content = mock_model.stream.call_args[0][0][1].content
     assert "build a classifier" in human_content
 
 
@@ -725,7 +877,7 @@ def test_summarizer_subagent_includes_plan_in_prompt(tmp_path: pathlib.Path):
             make_config(),
             tmp_path,
         )
-    human_content = mock_model.invoke.call_args[0][0][1].content
+    human_content = mock_model.stream.call_args[0][0][1].content
     assert "step 1: train model" in human_content
 
 
@@ -739,7 +891,7 @@ def test_summarizer_subagent_includes_file_contents_in_prompt(tmp_path: pathlib.
             make_config(),
             tmp_path,
         )
-    human_content = mock_model.invoke.call_args[0][0][1].content
+    human_content = mock_model.stream.call_args[0][0][1].content
     assert "src/model.py" in human_content
 
 
@@ -756,7 +908,7 @@ def test_summarizer_subagent_includes_milestones_in_prompt(tmp_path: pathlib.Pat
             make_config(),
             tmp_path,
         )
-    human_content = mock_model.invoke.call_args[0][0][1].content
+    human_content = mock_model.stream.call_args[0][0][1].content
     assert "step 1: train model" in human_content
     assert "step 2: evaluate model" in human_content
 
@@ -771,7 +923,7 @@ def test_summarizer_subagent_skips_empty_checkpoint(tmp_path: pathlib.Path):
             make_config(),
             tmp_path,
         )
-    human_content = mock_model.invoke.call_args[0][0][1].content
+    human_content = mock_model.stream.call_args[0][0][1].content
     assert "## Completed Plan" not in human_content
 
 
@@ -787,5 +939,7 @@ def test_summarizer_subagent_skips_plan_section_when_plan_absent(
             make_config(),
             tmp_path,
         )
-    messages = mock_model.invoke.call_args[0][0]
-    assert len(messages) == 2  # no third message when plan absent
+    messages = mock_model.stream.call_args[0][0]
+    # 2 input messages + 1 response appended by _invoke_streaming; no extra plan message
+    assert len(messages) == 3
+    assert not any("Last Plan" in getattr(m, "content", "") for m in messages[:2])
