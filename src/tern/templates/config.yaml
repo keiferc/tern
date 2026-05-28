@@ -9,7 +9,7 @@ max_iterations:
   planner: 20
   maker: 20
   checker: 10
-  summarizer: 5
+  summarizer: 15
   maker_checker_cycles: 5 # if issues remain after n cycles, inform user
 
 checker:

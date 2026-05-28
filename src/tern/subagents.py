@@ -9,6 +9,11 @@ import tern.config as tern_config
 import tern.models as tern_models
 import tern.tools as tern_tools
 
+
+class StreamError(RuntimeError):
+    """Raised when a model stream returns no chunks."""
+
+
 _NO_ISSUES_PHRASES: frozenset[str] = frozenset(
     {
         "clean",
@@ -202,13 +207,24 @@ def summarizer_subagent(
         human_parts
     )
 
-    model = tern_models.get_model(config, "summarizer")
+    tools: T.Sequence[lc_tools.BaseTool] = [
+        tern_tools.list_files,
+        tern_tools.read_file,
+    ]
+    model = tern_models.get_model(config, "summarizer").bind_tools(tools)
+    tool_map = {t.name: t for t in tools}
     messages: list[object] = [
         lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "summarizer")),
         lc_msg.HumanMessage(content=human_content),
     ]
 
-    response = _invoke_streaming(model, messages, "summarizer_subagent")
+    response = _react_loop(
+        model,
+        tool_map,
+        messages,
+        config.max_iterations["summarizer"],
+        "summarizer_subagent",
+    )
     return _extract_content(response)
 
 
@@ -293,7 +309,7 @@ def _invoke_streaming(model: T.Any, messages: list[object], caller_name: str) ->
             printed_any = True
         response = chunk if response is None else response + chunk
     if response is None:
-        raise RuntimeError(f"{caller_name}: model returned empty stream")
+        raise StreamError(f"{caller_name}: model returned empty stream")
     if printed_any:
         print()
     messages.append(response)

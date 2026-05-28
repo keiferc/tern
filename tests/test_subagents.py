@@ -47,12 +47,6 @@ def _make_mock_model(responses: list[object]) -> unittest.mock.MagicMock:
     return mock_model
 
 
-def _make_mock_model_no_tools(responses: list[object]) -> unittest.mock.MagicMock:
-    mock_model = unittest.mock.MagicMock()
-    mock_model.stream.side_effect = [iter([r]) for r in responses]
-    return mock_model
-
-
 def _mock_response(
     content: str, tool_calls: list | None = None
 ) -> unittest.mock.MagicMock:
@@ -248,7 +242,7 @@ def test_invoke_streaming_raises_on_empty_stream():
     mock_model = unittest.mock.MagicMock()
     mock_model.stream.return_value = iter([])
 
-    with pytest.raises(RuntimeError, match="empty stream"):
+    with pytest.raises(subagents.StreamError, match="empty stream"):
         subagents._invoke_streaming(mock_model, [], "test_agent")
 
 
@@ -855,7 +849,7 @@ def test_summarizer_subagent_empty_state_returns_empty_without_calling_model(
 
 def test_summarizer_subagent_includes_objective_in_prompt(tmp_path: pathlib.Path):
     _write_tern_dir(tmp_path)
-    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    mock_model = _make_mock_model([_mock_response("# Handoff")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.summarizer_subagent(
             {"session_objectives": ["build a classifier"], "milestones": []},
@@ -863,13 +857,13 @@ def test_summarizer_subagent_includes_objective_in_prompt(tmp_path: pathlib.Path
             make_config(),
             tmp_path,
         )
-    human_content = mock_model.stream.call_args[0][0][1].content
+    human_content = mock_model.bind_tools.return_value.stream.call_args[0][0][1].content
     assert "build a classifier" in human_content
 
 
 def test_summarizer_subagent_includes_plan_in_prompt(tmp_path: pathlib.Path):
     _write_tern_dir(tmp_path)
-    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    mock_model = _make_mock_model([_mock_response("# Handoff")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.summarizer_subagent(
             {"plan": "step 1: train model", "milestones": []},
@@ -877,13 +871,13 @@ def test_summarizer_subagent_includes_plan_in_prompt(tmp_path: pathlib.Path):
             make_config(),
             tmp_path,
         )
-    human_content = mock_model.stream.call_args[0][0][1].content
+    human_content = mock_model.bind_tools.return_value.stream.call_args[0][0][1].content
     assert "step 1: train model" in human_content
 
 
 def test_summarizer_subagent_includes_file_contents_in_prompt(tmp_path: pathlib.Path):
     _write_tern_dir(tmp_path)
-    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    mock_model = _make_mock_model([_mock_response("# Handoff")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.summarizer_subagent(
             {"milestones": []},
@@ -891,13 +885,13 @@ def test_summarizer_subagent_includes_file_contents_in_prompt(tmp_path: pathlib.
             make_config(),
             tmp_path,
         )
-    human_content = mock_model.stream.call_args[0][0][1].content
+    human_content = mock_model.bind_tools.return_value.stream.call_args[0][0][1].content
     assert "src/model.py" in human_content
 
 
 def test_summarizer_subagent_includes_milestones_in_prompt(tmp_path: pathlib.Path):
     _write_tern_dir(tmp_path)
-    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    mock_model = _make_mock_model([_mock_response("# Handoff")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.summarizer_subagent(
             {
@@ -908,14 +902,14 @@ def test_summarizer_subagent_includes_milestones_in_prompt(tmp_path: pathlib.Pat
             make_config(),
             tmp_path,
         )
-    human_content = mock_model.stream.call_args[0][0][1].content
+    human_content = mock_model.bind_tools.return_value.stream.call_args[0][0][1].content
     assert "step 1: train model" in human_content
     assert "step 2: evaluate model" in human_content
 
 
 def test_summarizer_subagent_skips_empty_checkpoint(tmp_path: pathlib.Path):
     _write_tern_dir(tmp_path)
-    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    mock_model = _make_mock_model([_mock_response("# Handoff")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.summarizer_subagent(
             {"session_objectives": ["build a model"], "milestones": [""]},
@@ -923,7 +917,7 @@ def test_summarizer_subagent_skips_empty_checkpoint(tmp_path: pathlib.Path):
             make_config(),
             tmp_path,
         )
-    human_content = mock_model.stream.call_args[0][0][1].content
+    human_content = mock_model.bind_tools.return_value.stream.call_args[0][0][1].content
     assert "## Completed Plan" not in human_content
 
 
@@ -931,7 +925,7 @@ def test_summarizer_subagent_skips_plan_section_when_plan_absent(
     tmp_path: pathlib.Path,
 ):
     _write_tern_dir(tmp_path)
-    mock_model = _make_mock_model_no_tools([_mock_response("# Handoff")])
+    mock_model = _make_mock_model([_mock_response("# Handoff")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
         subagents.summarizer_subagent(
             {"session_objectives": ["build a model"], "milestones": []},
@@ -939,7 +933,7 @@ def test_summarizer_subagent_skips_plan_section_when_plan_absent(
             make_config(),
             tmp_path,
         )
-    messages = mock_model.stream.call_args[0][0]
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     # 2 input messages + 1 response appended by _invoke_streaming; no extra plan message
     assert len(messages) == 3
     assert not any("Last Plan" in getattr(m, "content", "") for m in messages[:2])
