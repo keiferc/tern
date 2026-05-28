@@ -320,7 +320,7 @@ def _detect_checkpoint(state: dict) -> str:
         return "dep_approval"
     if state.get("issues") and state.get("plan_approved") is None:
         return "new_objective"
-    if state.get("plan") is not None and state.get("plan_approved") is None:
+    if state.get("plan") is not None and state.get("plan_approved") is not True:
         return "plan_approval"
     return "new_objective"
 
@@ -335,7 +335,7 @@ def _compute_update(checkpoint: str, user_input: str) -> dict:
             return {"deps_approved": True, "feedback": []}
         return {
             "deps_approved": None,
-            "plan_approved": None,
+            "plan_approved": False,
             "new_deps": [],
             "issues": [],
             "feedback": [user_input],

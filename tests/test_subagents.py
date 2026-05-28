@@ -725,9 +725,8 @@ def test_summarizer_subagent_includes_plan_in_prompt(tmp_path: pathlib.Path):
             make_config(),
             tmp_path,
         )
-    messages = mock_model.invoke.call_args[0][0]
-    assert isinstance(messages[2], lc_msg.AIMessage)
-    assert "step 1: train model" in messages[2].content
+    human_content = mock_model.invoke.call_args[0][0][1].content
+    assert "step 1: train model" in human_content
 
 
 def test_summarizer_subagent_includes_file_contents_in_prompt(tmp_path: pathlib.Path):
@@ -789,4 +788,4 @@ def test_summarizer_subagent_skips_plan_section_when_plan_absent(
             tmp_path,
         )
     messages = mock_model.invoke.call_args[0][0]
-    assert len(messages) == 2  # no AIMessage when plan absent
+    assert len(messages) == 2  # no third message when plan absent

@@ -191,21 +191,21 @@ def summarizer_subagent(
             human_parts.append(f"## Completed Plan\n{milestone}")
 
     plan = state.get("plan")
+    if plan:
+        human_parts.append(f"## Last Plan\n{plan}")
 
-    if not human_parts and not plan:
+    if not human_parts:
         return ""
 
-    human_content = "Summarize the following session for handoff."
-    if human_parts:
-        human_content += "\n\n" + "\n\n".join(human_parts)
+    human_content = "Summarize the following session for handoff.\n\n" + "\n\n".join(
+        human_parts
+    )
 
     model = tern_models.get_model(config, "summarizer")
     messages: list[object] = [
         lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "summarizer")),
         lc_msg.HumanMessage(content=human_content),
     ]
-    if plan:
-        messages.append(lc_msg.AIMessage(content=f"## Plan\n{plan}"))
 
     response = model.invoke(messages)  # ty: ignore[invalid-argument-type]
     return _extract_content(response)

@@ -589,6 +589,7 @@ def test_sandbox_exists_true_when_name_matches():
             {"issues": ["bad import"], "plan": "step 1", "plan_approved": None},
             "new_objective",
         ),
+        ({"plan": "step 1", "plan_approved": False}, "plan_approval"),
     ],
     ids=[
         "empty",
@@ -599,6 +600,7 @@ def test_sandbox_exists_true_when_name_matches():
         "dep_beats_plan",
         "issues_map_to_new_objective",
         "issues_beats_plan",
+        "dep_rejected_routes_to_plan_approval",
     ],
 )
 def test_detect_checkpoint(state_kwargs: dict, expected: str):
@@ -619,7 +621,7 @@ def test_detect_checkpoint(state_kwargs: dict, expected: str):
             "use stdlib instead",
             {
                 "deps_approved": None,
-                "plan_approved": None,
+                "plan_approved": False,
                 "new_deps": [],
                 "issues": [],
                 "feedback": ["use stdlib instead"],
