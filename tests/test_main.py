@@ -787,7 +787,7 @@ def test_cmd_repl_exit_with_handoff_and_objective_sets_need_handoff(repl_graph):
     with unittest.mock.patch("builtins.input", side_effect=["exit", "y"]):
         tern_main.cmd_repl(argparse.Namespace())
     repl_graph.update_state.assert_called_once_with(
-        unittest.mock.ANY, {"need_handoff": True}
+        unittest.mock.ANY, {"need_handoff": True}, as_node="user"
     )
 
 
@@ -813,7 +813,7 @@ def test_cmd_repl_plan_approval_approve_calls_correct_update(repl_graph):
     with unittest.mock.patch("builtins.input", return_value="approve"):
         tern_main.cmd_repl(argparse.Namespace())
     repl_graph.update_state.assert_called_once_with(
-        unittest.mock.ANY, {"plan_approved": True, "feedback": []}
+        unittest.mock.ANY, {"plan_approved": True, "feedback": []}, as_node="user"
     )
 
 

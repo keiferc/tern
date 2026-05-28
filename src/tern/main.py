@@ -214,7 +214,11 @@ def cmd_repl(args: argparse.Namespace) -> None:
         if not user_input:
             continue
 
-        graph.update_state(graph_config, _compute_update(checkpoint, user_input))
+        graph.update_state(
+            graph_config,
+            _compute_update(checkpoint, user_input),
+            as_node="user",
+        )
         if not _invoke(graph, lg_types.Command(resume=True), graph_config):
             sys.exit(1)
 
@@ -363,7 +367,7 @@ def _handle_exit(
         print()
         return
     if answer == "y" and state.get("objective"):
-        graph.update_state(graph_config, {"need_handoff": True})
+        graph.update_state(graph_config, {"need_handoff": True}, as_node="user")
         _invoke(graph, None, graph_config)
 
 
