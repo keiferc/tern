@@ -14,6 +14,7 @@ import langgraph.types as lg_types
 import tern.agent as tern_agent
 import tern.config as tern_config
 import tern.scaffold as tern_scaffold
+import tern.subagents as tern_subagents
 import tern.ui as tern_ui
 
 
@@ -293,7 +294,7 @@ def _invoke(
         if _is_auth_error(exc):
             print(_AUTH_ERROR_MSG, file=sys.stderr)
             return False
-        if isinstance(exc, RuntimeError):
+        if isinstance(exc, tern_subagents.StreamError):
             print(f"error: {exc}", file=sys.stderr)
             return False
         raise

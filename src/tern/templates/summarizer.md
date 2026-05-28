@@ -10,5 +10,7 @@ Include:
 - Any plan changes or deviations from the original spec, and why.
 - Open issues or next steps, if any.
 
+You have access to `list_files` and `read_file`. Use them to inspect any project files you need for a complete summary.
+
 Write in clear, concise prose. No filler. A reader should be able to resume work from your summary
 alone.

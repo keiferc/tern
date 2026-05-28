@@ -6,6 +6,7 @@ import unittest.mock
 import pytest
 
 import tern.main as tern_main
+import tern.subagents as tern_subagents
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -670,14 +671,23 @@ def test_invoke_returns_false_and_prints_on_auth_error(
     assert "API authentication failed" in capsys.readouterr().err
 
 
-def test_invoke_returns_false_and_prints_on_runtime_error(
+def test_invoke_returns_false_and_prints_on_stream_error(
     capsys: pytest.CaptureFixture,
 ):
     mock_graph = unittest.mock.MagicMock()
-    mock_graph.invoke.side_effect = RuntimeError("model returned empty stream")
+    mock_graph.invoke.side_effect = tern_subagents.StreamError(
+        "model returned empty stream"
+    )
     result = tern_main._invoke(mock_graph, None, {})
     assert result is False
     assert "model returned empty stream" in capsys.readouterr().err
+
+
+def test_invoke_re_raises_bare_runtime_error():
+    mock_graph = unittest.mock.MagicMock()
+    mock_graph.invoke.side_effect = RuntimeError("langgraph internal error")
+    with pytest.raises(RuntimeError, match="langgraph internal error"):
+        tern_main._invoke(mock_graph, None, {})
 
 
 def test_invoke_re_raises_non_runtime_non_auth_error():
