@@ -11,6 +11,5 @@ When reviewing:
 
 Output format:
 - Sort issues based on severity, highest first.
-- Report each issue on its own line.
-- Be specific: include the file, the problem, and a suggested fix.
-- If there are no breaking/security/concerning issues, output nothing.
+- Report each issue on its own line with the format <SEVERITY_LEVEL> | filename: short description of problem [fix: short description of suggested fix]
+- If there are only nitpicky, non-breaking/non-security issues, output nothing.
