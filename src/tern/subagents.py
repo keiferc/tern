@@ -169,6 +169,7 @@ def checker_subagent(
         messages,
         config.max_iterations["checker"],
         "checker_subagent",
+        silent=True,
     )
     content = _extract_content(response)
     return [
@@ -298,12 +299,14 @@ def _extract_stream_text(chunk: object) -> str:
     return ""
 
 
-def _invoke_streaming(model: T.Any, messages: list[object], caller_name: str) -> object:
+def _invoke_streaming(
+    model: T.Any, messages: list[object], caller_name: str, *, silent: bool = False
+) -> object:
     response: object | None = None
     printed_any = False
     for chunk in model.stream(messages):
         text = _extract_stream_text(chunk)
-        if text:
+        if text and not silent:
             sys.stdout.write(text)
             sys.stdout.flush()
             printed_any = True
@@ -342,14 +345,17 @@ def _react_loop(
     messages: list[object],
     max_iter: int,
     agent_name: str,
+    *,
+    silent: bool = False,
 ) -> object:
     response: object | None = None
     for _ in range(max_iter):
-        response = _invoke_streaming(model, messages, agent_name)
+        response = _invoke_streaming(model, messages, agent_name, silent=silent)
         tool_calls = getattr(response, "tool_calls", [])
         if not tool_calls:
             break
         _execute_tool_calls(tool_map, tool_calls, messages)
+        print()
     if response is None:
         raise ValueError(
             f"{agent_name} produced no response: max_iterations is {max_iter}"
