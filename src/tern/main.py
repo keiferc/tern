@@ -134,7 +134,7 @@ def cmd_on(args: argparse.Namespace) -> None:
         print(f"error: scaffold not found at {tern_dir}. Run `tern up` first.")
         sys.exit(1)
 
-    tern_ui.print_stage("Loading scaffold")
+    tern_ui.print_stage("Loading tern")
 
     with tern_ui.Spinner(f"Connecting to sandbox '{sandbox}'"):
         exists = _sandbox_exists(sandbox)
@@ -301,9 +301,7 @@ def _invoke(
 
 
 def _print_checkpoint(checkpoint: str, state: dict) -> None:
-    if checkpoint == "plan_approval":
-        print(f"\n{state.get('plan', '')}")
-    elif checkpoint == "dep_approval":
+    if checkpoint == "dep_approval":
         print(f"\nNew dependencies: {', '.join(state.get('new_deps', []))}")
     elif checkpoint == "new_objective":
         if state.get("issues") and state.get("plan_approved") is None:

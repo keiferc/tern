@@ -246,6 +246,16 @@ def test_invoke_streaming_raises_on_empty_stream():
         subagents._invoke_streaming(mock_model, [], "test_agent")
 
 
+def test_invoke_streaming_silent_suppresses_stdout(capsys: pytest.CaptureFixture):
+    chunk = _mock_response("hello world")
+    mock_model = unittest.mock.MagicMock()
+    mock_model.stream.return_value = iter([chunk])
+
+    subagents._invoke_streaming(mock_model, [], "test", silent=True)
+
+    assert capsys.readouterr().out == ""
+
+
 # ── _execute_tool_calls (print) ───────────────────────────────────────────────
 
 
@@ -343,6 +353,23 @@ def test_react_loop_appends_error_for_unknown_tool():
     tool_messages = [m for m in messages if isinstance(m, lc_msg.ToolMessage)]
     assert len(tool_messages) == 1
     assert "unknown tool" in tool_messages[0].content
+
+
+def test_react_loop_prints_blank_line_after_tool_calls(capsys: pytest.CaptureFixture):
+    tool_resp = _mock_response(
+        content="", tool_calls=[{"name": "t", "args": {}, "id": "tc1"}]
+    )
+    final_resp = _mock_response("done")
+    mock_model = unittest.mock.MagicMock()
+    mock_model.stream.side_effect = [iter([tool_resp]), iter([final_resp])]
+    tool = unittest.mock.MagicMock()
+    tool.invoke.return_value = "result"
+
+    subagents._react_loop(
+        mock_model, {"t": tool}, [unittest.mock.MagicMock()], 3, "agent"
+    )
+
+    assert "\n\n" in capsys.readouterr().out
 
 
 # ── _append_context ───────────────────────────────────────────────────────────
@@ -828,6 +855,16 @@ def test_checker_subagent_omits_ai_message_when_no_files(tmp_path: pathlib.Path)
     messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
     ai_msgs = [m for m in messages if isinstance(m, lc_msg.AIMessage)]
     assert len(ai_msgs) == 0
+
+
+def test_checker_subagent_does_not_stream_raw_output(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("HIGH | raw issue text")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.checker_subagent("", "", make_config(), tmp_path)
+    assert "HIGH | raw issue text" not in capsys.readouterr().out
 
 
 # ── summarizer_subagent ───────────────────────────────────────────────────────

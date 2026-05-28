@@ -703,7 +703,7 @@ def test_invoke_re_raises_non_runtime_non_auth_error():
 @pytest.mark.parametrize(
     "checkpoint, state_kwargs, needle",
     [
-        ("plan_approval", {"plan": "step 1: build model"}, "step 1: build model"),
+        ("plan_approval", {"plan": "step 1: build model"}, None),
         ("dep_approval", {"new_deps": ["numpy"]}, "numpy"),
         (
             "new_objective",
@@ -714,7 +714,7 @@ def test_invoke_re_raises_non_runtime_non_auth_error():
         ("new_objective", {}, None),
     ],
     ids=[
-        "plan",
+        "plan_approval_no_output",
         "dep",
         "new_objective_with_issues",
         "cycle_complete_via_new_objective",

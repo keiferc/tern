@@ -31,7 +31,7 @@ def print_separator() -> None:
 
 def format_prompt(text: str) -> str:
     if _use_ansi():
-        return f"\033[1m{text}\033[0m"
+        return f"\001\033[1m\002{text}\001\033[0m\002"
     return text
 
 

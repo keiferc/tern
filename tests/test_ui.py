@@ -74,8 +74,7 @@ def test_format_prompt_plain_when_no_ansi():
 def test_format_prompt_contains_text_when_ansi():
     with unittest.mock.patch("tern.ui._use_ansi", return_value=True):
         result = tern_ui.format_prompt("objective: ")
-    assert "objective: " in result
-    assert "\033[" in result
+    assert result == "\001\033[1m\002objective: \001\033[0m\002"
 
 
 # ── Spinner ───────────────────────────────────────────────────────────────────
