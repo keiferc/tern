@@ -1,4 +1,5 @@
 import pathlib
+import sys
 import typing as T
 
 import langchain.messages as lc_msg
@@ -207,7 +208,7 @@ def summarizer_subagent(
         lc_msg.HumanMessage(content=human_content),
     ]
 
-    response = model.invoke(messages)  # ty: ignore[invalid-argument-type]
+    response = _invoke_streaming(model, messages, "summarizer_subagent")
     return _extract_content(response)
 
 
@@ -249,16 +250,54 @@ def _is_no_issue_line(line: str) -> bool:
 
 
 def _extract_content(response: object) -> str:
-    # AIMessage.content is str (OpenAI) or list of blocks (Anthropic); normalise to str.
     content = getattr(response, "content", "")
     if isinstance(content, str):
         return content
     if isinstance(content, list):
+        # Final message list may contain plain str items (OpenAI) or dicts (Anthropic).
+        # Differs from _extract_stream_text, which only handles dicts with type="text".
         return "".join(
             block if isinstance(block, str) else block.get("text", "")
             for block in content
         )
     return ""
+
+
+def _key_arg(args: dict) -> str:
+    return args.get("path") or args.get("url") or ""
+
+
+def _extract_stream_text(chunk: object) -> str:
+    content = getattr(chunk, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        # Streaming chunks mix type="text" with tool_use/thinking; skip non-text blocks.
+        # Differs from _extract_content, which also passes through plain str list items.
+        return "".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return ""
+
+
+def _invoke_streaming(model: T.Any, messages: list[object], caller_name: str) -> object:
+    response: object | None = None
+    printed_any = False
+    for chunk in model.stream(messages):
+        text = _extract_stream_text(chunk)
+        if text:
+            sys.stdout.write(text)
+            sys.stdout.flush()
+            printed_any = True
+        response = chunk if response is None else response + chunk
+    if response is None:
+        raise RuntimeError(f"{caller_name}: model returned empty stream")
+    if printed_any:
+        print()
+    messages.append(response)
+    return response
 
 
 def _execute_tool_calls(
@@ -267,6 +306,7 @@ def _execute_tool_calls(
     messages: list[object],
 ) -> None:
     for tool_call in tool_calls:
+        print(f"  → {tool_call['name']}({_key_arg(tool_call['args'])})")
         tool = tool_map.get(tool_call["name"])
         if tool is None:
             result = f"Error: unknown tool {tool_call['name']!r}"
@@ -289,8 +329,7 @@ def _react_loop(
 ) -> object:
     response: object | None = None
     for _ in range(max_iter):
-        response = model.invoke(messages)
-        messages.append(response)
+        response = _invoke_streaming(model, messages, agent_name)
         tool_calls = getattr(response, "tool_calls", [])
         if not tool_calls:
             break

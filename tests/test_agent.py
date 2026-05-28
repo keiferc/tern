@@ -9,6 +9,7 @@ import pytest
 import tern.agent as agent
 import tern.config as tern_config
 import tern.subagents as tern_subagents
+import tern.ui as tern_ui
 
 
 def make_config() -> tern_config.Config:
@@ -189,6 +190,93 @@ def test_route_checker_issues_at_cycle_limit_routes_to_user():
 def test_user_node_returns_empty_dict():
     state = make_state()
     assert agent.user_node(state) == {}
+
+
+def test_planner_node_prints_planning_banner(tmp_path: pathlib.Path):
+    state = make_state(objective="build a model")
+    with unittest.mock.patch("tern.subagents.planner_subagent", return_value="plan"):
+        with unittest.mock.patch.object(tern_ui, "print_stage") as mock_stage:
+            agent.planner_node(state, make_config(), tmp_path)
+    mock_stage.assert_called_once_with("Planning")
+
+
+def test_maker_node_prints_implementing_banner(tmp_path: pathlib.Path):
+    state = make_state(objective="build a model", plan="step 1")
+    with unittest.mock.patch.object(tern_subagents, "maker_subagent", return_value=[]):
+        with unittest.mock.patch.object(tern_ui, "print_stage") as mock_stage:
+            agent.maker_node(state, make_config(), tmp_path)
+    mock_stage.assert_called_once_with("Implementing")
+
+
+def test_dep_check_node_prints_reviewing_banner(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    (tmp_path / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    with unittest.mock.patch.object(tern_ui, "print_stage") as mock_stage:
+        agent.dep_check_node(make_state())
+    mock_stage.assert_called_once_with("Reviewing")
+
+
+def test_qa_runner_node_does_not_print_stage_banner():
+    with unittest.mock.patch.object(tern_ui, "print_stage") as mock_stage:
+        agent.qa_runner_node(make_config())
+    mock_stage.assert_not_called()
+
+
+def test_checker_node_does_not_print_stage_banner(tmp_path: pathlib.Path):
+    state = make_state(qa_output="", written_files=["ghost.py"])
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ):
+        with unittest.mock.patch.object(tern_ui, "print_stage") as mock_stage:
+            agent.checker_node(state, make_config(), tmp_path)
+    mock_stage.assert_not_called()
+
+
+def test_summarizer_node_prints_generating_handoff_banner(tmp_path: pathlib.Path):
+    state = make_state()
+    with unittest.mock.patch.object(
+        tern_subagents, "summarizer_subagent", return_value=""
+    ):
+        with unittest.mock.patch.object(tern_ui, "print_stage") as mock_stage:
+            agent.summarizer_node(state, make_config(), tmp_path)
+    mock_stage.assert_called_once_with("Generating handoff")
+
+
+def test_checker_node_prints_done_no_issues(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+):
+    state = make_state(qa_output="", written_files=["ghost.py"])
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ):
+        agent.checker_node(state, make_config(), tmp_path)
+    assert "done — no issues" in capsys.readouterr().out
+
+
+def test_checker_node_prints_issues(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+):
+    state = make_state(qa_output="", written_files=["ghost.py"])
+    with unittest.mock.patch.object(
+        tern_subagents,
+        "checker_subagent",
+        return_value=["unused import", "missing type hint"],
+    ):
+        agent.checker_node(state, make_config(), tmp_path)
+    out = capsys.readouterr().out
+    assert "  - unused import" in out
+    assert "  - missing type hint" in out
+
+
+def test_checker_node_prints_synthetic_issue_when_no_files(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+):
+    state = make_state(qa_output="", written_files=[], maker_checker_cycles=1)
+    agent.checker_node(state, make_config(), tmp_path)
+    assert "  - Maker wrote no files" in capsys.readouterr().out
 
 
 def test_planner_node_returns_plan_fields(tmp_path: pathlib.Path):
