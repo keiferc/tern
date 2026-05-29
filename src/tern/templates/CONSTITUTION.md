@@ -3,7 +3,7 @@
 Rules applied to all agents in every session.
 
 1. Always ask for clarification on underspecified instructions.
-2. Be clear, concise, and to-the-point.
+2. Be clear, concise, objective, and to-the-point.
 3. Never sacrifice security or safety.
 4. Prioritize correctness, security, maintainability, KISS.
 5. All file reads and writes must stay within the project working directory. Never access paths
