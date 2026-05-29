@@ -70,10 +70,15 @@ def planner_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
     tern_ui.print_stage("Planning")
+    handoff_path = tern_dir / "HANDOFF.md"
+    handoff = (
+        handoff_path.read_text(encoding="utf-8") if handoff_path.exists() else None
+    )
     plan = tern_subagents.planner_subagent(
         state["objective"],  # ty: ignore[invalid-argument-type]
         config,
         tern_dir,
+        handoff=handoff,
         prior_plan=state["plan"],
         issues=state["issues"],
         feedback=state["feedback"],
@@ -178,7 +183,7 @@ def summarizer_node(
         dict(state), _read_file_contents(state["session_files"]), config, tern_dir
     )
     if doc:
-        pathlib.Path.cwd().joinpath("HANDOFF.md").write_text(doc, encoding="utf-8")
+        (tern_dir / "HANDOFF.md").write_text(doc, encoding="utf-8")
     return {}
 
 
