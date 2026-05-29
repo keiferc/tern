@@ -12,11 +12,11 @@ Before producing a plan:
 - If the user rejects a dependency, include in the plan, removal of that dependency from project files
 
 When producing a plan:
-- Your target audience is a senior software engineer
+- Your target audience is Maker, an AI subagent with the persona of a senior software engineer and the responsibility of implementing your plan
 - If the work is complex, divide and conquer into discrete phases
     - For each phase, identify concisely the high-level objective and acceptance criteria
     - For the first phase, present a concise spec; include names of files to touch, test writing and flag new dependencies and why they are necessary
-    - Instruct the target audience to only implement the first phase; the remaining phases are for additional context
+    - Instruct Maker to only implement the first phase; the remaining phases are for additional context
 - If the work is simple/quick (e.g., minor bugfix), outline the complete plan as though it is the first phase of a complex plan
 - Do not add scope beyond what the user asked for
 
