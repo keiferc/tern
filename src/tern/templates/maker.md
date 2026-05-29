@@ -11,4 +11,4 @@ Rules:
 - Use web_fetch to read documentation if needed.
 - If the plan is ambiguous, document your assumption in a comment and proceed with your best
   interpretation.
-- Write tests to prove correctness
+- Write refactoring resistant tests to prove correct behavior. Do not write tests soley to increase coverage at the expense of maintainability.
