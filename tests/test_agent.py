@@ -329,6 +329,25 @@ def test_planner_node_passes_context_to_planner_subagent(tmp_path: pathlib.Path)
     assert kwargs.get("feedback") == ["fix imports"]
 
 
+def test_planner_node_passes_handoff_when_file_exists(tmp_path: pathlib.Path):
+    (tmp_path / "HANDOFF.md").write_text("prior session content", encoding="utf-8")
+    state = make_state(objective="build a model")
+    with unittest.mock.patch(
+        "tern.subagents.planner_subagent", return_value="plan"
+    ) as mock_planner:
+        agent.planner_node(state, make_config(), tmp_path)
+    assert mock_planner.call_args.kwargs.get("handoff") == "prior session content"
+
+
+def test_planner_node_omits_handoff_when_file_absent(tmp_path: pathlib.Path):
+    state = make_state(objective="build a model")
+    with unittest.mock.patch(
+        "tern.subagents.planner_subagent", return_value="plan"
+    ) as mock_planner:
+        agent.planner_node(state, make_config(), tmp_path)
+    assert mock_planner.call_args.kwargs.get("handoff") is None
+
+
 def test_maker_node_passes_context_to_maker_subagent(tmp_path: pathlib.Path):
     state = make_state(
         objective="build a model",
@@ -504,15 +523,13 @@ def test_summarizer_node_writes_handoff_doc(tmp_path: pathlib.Path):
     with unittest.mock.patch.object(
         tern_subagents, "summarizer_subagent", return_value="# Handoff\n\nDone."
     ):
-        with unittest.mock.patch("pathlib.Path.cwd", return_value=tmp_path):
-            agent.summarizer_node(state, make_config(), tmp_path)
+        agent.summarizer_node(state, make_config(), tmp_path)
     assert (tmp_path / "HANDOFF.md").read_text() == "# Handoff\n\nDone."
 
 
 def test_summarizer_node_skips_write_when_empty(tmp_path: pathlib.Path):
     state = make_state()
-    with unittest.mock.patch("pathlib.Path.cwd", return_value=tmp_path):
-        agent.summarizer_node(state, make_config(), tmp_path)
+    agent.summarizer_node(state, make_config(), tmp_path)
     assert not (tmp_path / "HANDOFF.md").exists()
 
 

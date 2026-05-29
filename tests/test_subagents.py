@@ -581,6 +581,73 @@ def test_planner_subagent_message_order_with_all_context(tmp_path: pathlib.Path)
     assert len(messages) == 5  # 4 input messages + 1 response appended by _react_loop
 
 
+def test_planner_subagent_with_handoff_prepends_prior_session(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("plan")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.planner_subagent(
+            "build a classifier",
+            make_config(),
+            tmp_path,
+            handoff="last session did X",
+        )
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
+    human_content = messages[1].content
+    assert human_content.startswith("## Prior Session")
+    assert "last session did X" in human_content
+    assert "## Current Objective" in human_content
+    assert "build a classifier" in human_content
+
+
+def test_planner_subagent_without_handoff_uses_objective_only(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("plan")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.planner_subagent("build a classifier", make_config(), tmp_path)
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
+    assert messages[1].content == "build a classifier"
+
+
+def test_planner_subagent_whitespace_only_handoff_uses_objective_only(
+    tmp_path: pathlib.Path,
+):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("plan")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.planner_subagent(
+            "build a classifier",
+            make_config(),
+            tmp_path,
+            handoff="   \n  ",
+        )
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
+    assert messages[1].content == "build a classifier"
+
+
+def test_planner_subagent_message_order_with_handoff_and_prior_plan(
+    tmp_path: pathlib.Path,
+):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("plan")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        subagents.planner_subagent(
+            "build a classifier",
+            make_config(),
+            tmp_path,
+            handoff="prior session did X",
+            prior_plan="old plan",
+            issues=["unused import"],
+            feedback=["fix imports"],
+        )
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
+    assert isinstance(messages[0], lc_msg.SystemMessage)
+    assert isinstance(messages[1], lc_msg.HumanMessage)
+    assert "## Prior Session" in messages[1].content
+    assert isinstance(messages[2], lc_msg.AIMessage)  # prior_plan
+    assert isinstance(messages[3], lc_msg.HumanMessage)  # issues + feedback
+    assert len(messages) == 5
+
+
 def test_planner_subagent_raises_if_max_iterations_zero(tmp_path: pathlib.Path):
     _write_tern_dir(tmp_path)
     config = tern_config.Config(

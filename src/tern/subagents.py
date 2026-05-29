@@ -42,6 +42,7 @@ def planner_subagent(
     config: tern_config.Config,
     tern_dir: pathlib.Path,
     *,
+    handoff: str | None = None,
     prior_plan: str | None = None,
     issues: list[str] | None = None,
     feedback: list[str] | None = None,
@@ -53,9 +54,14 @@ def planner_subagent(
     ]
     model = tern_models.get_model(config, "planner").bind_tools(tools)
     tool_map = {t.name: t for t in tools}
+    objective_content = (
+        f"## Prior Session\n{handoff}\n\n## Current Objective\n{objective}"
+        if handoff and handoff.strip()
+        else objective
+    )
     messages: list[object] = [
         lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "planner")),
-        lc_msg.HumanMessage(content=objective),
+        lc_msg.HumanMessage(content=objective_content),
     ]
     if prior_plan:
         messages.append(lc_msg.AIMessage(content=prior_plan))
