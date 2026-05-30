@@ -5,6 +5,14 @@ import pytest
 import tern.ui as tern_ui
 
 
+# ── print_banner ──────────────────────────────────────────────────────────────
+
+
+def test_print_banner_outputs_art(capsys: pytest.CaptureFixture):
+    tern_ui.print_banner()
+    assert "###" in capsys.readouterr().out
+
+
 # ── _use_ansi ─────────────────────────────────────────────────────────────────
 
 
@@ -30,6 +38,26 @@ def test_use_ansi_true_when_tty_and_no_no_color(monkeypatch: pytest.MonkeyPatch)
 
 
 # ── print_stage ───────────────────────────────────────────────────────────────
+
+
+def test_print_stage_includes_color_for_known_stage(capsys: pytest.CaptureFixture):
+    with unittest.mock.patch("tern.ui._use_ansi", return_value=True):
+        with unittest.mock.patch("sys.stdout") as mock_stdout:
+            written = []
+            mock_stdout.write.side_effect = written.append
+            tern_ui.print_stage("Planning")
+    output = "".join(written)
+    assert tern_ui._STAGE_COLORS["Planning"] in output
+
+
+def test_print_stage_no_color_for_unknown_stage(capsys: pytest.CaptureFixture):
+    with unittest.mock.patch("tern.ui._use_ansi", return_value=True):
+        with unittest.mock.patch("sys.stdout") as mock_stdout:
+            written = []
+            mock_stdout.write.side_effect = written.append
+            tern_ui.print_stage("Unknown Stage")
+    output = "".join(written)
+    assert not any(code in output for code in tern_ui._STAGE_COLORS.values())
 
 
 def test_print_stage_contains_name(capsys: pytest.CaptureFixture):

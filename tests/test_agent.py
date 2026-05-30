@@ -518,13 +518,46 @@ def test_summarizer_node_returns_empty_dict(tmp_path: pathlib.Path):
     assert agent.summarizer_node(state, make_config(), tmp_path) == {}
 
 
-def test_summarizer_node_writes_handoff_doc(tmp_path: pathlib.Path):
+def test_summarizer_node_writes_handoff_doc(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    cwd = tmp_path / "project"
+    cwd.mkdir()
+    tern_dir = cwd / ".tern"
+    tern_dir.mkdir()
+    monkeypatch.chdir(cwd)
     state = make_state()
     with unittest.mock.patch.object(
         tern_subagents, "summarizer_subagent", return_value="# Handoff\n\nDone."
     ):
-        agent.summarizer_node(state, make_config(), tmp_path)
-    assert (tmp_path / "HANDOFF.md").read_text() == "# Handoff\n\nDone."
+        agent.summarizer_node(state, make_config(), tern_dir)
+    assert (tern_dir / "HANDOFF.md").read_text() == "# Handoff\n\nDone."
+
+
+def test_summarizer_node_prints_path_when_doc_written(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+):
+    cwd = tmp_path / "project"
+    cwd.mkdir()
+    tern_dir = cwd / ".tern"
+    tern_dir.mkdir()
+    monkeypatch.chdir(cwd)
+    state = make_state()
+    with unittest.mock.patch.object(
+        tern_subagents, "summarizer_subagent", return_value="# Handoff\n\nDone."
+    ):
+        agent.summarizer_node(state, make_config(), tern_dir)
+    assert ".tern/HANDOFF.md" in capsys.readouterr().out
+
+
+def test_summarizer_node_prints_nothing_extra_when_empty(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+):
+    state = make_state()
+    agent.summarizer_node(state, make_config(), tmp_path)
+    assert "saved to" not in capsys.readouterr().out
 
 
 def test_summarizer_node_skips_write_when_empty(tmp_path: pathlib.Path):

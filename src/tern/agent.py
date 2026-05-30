@@ -184,6 +184,8 @@ def summarizer_node(
     )
     if doc:
         (tern_dir / "HANDOFF.md").write_text(doc, encoding="utf-8")
+        rel = (tern_dir / "HANDOFF.md").relative_to(pathlib.Path.cwd())
+        print(f"  saved to {rel}")
     return {}
 
 
