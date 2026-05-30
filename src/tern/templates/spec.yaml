@@ -4,7 +4,6 @@ name: tern
 
 agent:
   image: ghcr.io/keiferc/tern:0.1.0
-  persistence: persistent
   entrypoint:
     run: ["uv", "sync", "--quiet"]
 
