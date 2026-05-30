@@ -1,33 +1,48 @@
 # Tern
 
-Not an intern or an extern, just a tern: a provider-agnostic, human-in-the-loop, multi-agent coding assistant with deterministic security controls and user-configurable tool permissions, guardrails, subagent model choice, and prompt templates. Also a seabird. Primarily used a an exercise in building AI agents.
+Not an intern or an extern, just a tern: a provider-agnostic, human-in-the-loop, multi-agent coding assistant with deterministic security controls and user-configurable tool permissions, guardrails, subagent model choice, and prompt templates. Also a seabird. Primarily used as an exercise in building AI agents.
+
+![tern REPL demo](assets/tern-demo.gif)
 
 ## Features
 
-- Security
-    - Agent runs in a microVM isolated from host (i.e., Docker Sandbox)
-    - Agent's filesystem access is limited to the project directory in which it is installed
-    - Agent's internet access is limited to a customizable allowlist
-    - API credentials are supplied explicitly through Docker Sandbox secrets with nothing exposed to the sandbox internals.
-    - Agent has deterministic human-in-the-loop (HITL) controls for dependency use approval
-- Customizability
-    - Choose subagent models based on your risk level, task complexity, and cost (e.g., can use open source model for Summarizer subagent, GPT for Maker subagent, and Claude for Checker subagent)
-    - Subagent personas and success rubrics are customizable
-    - Customize your soft guardrails
-- Supported Model Providers
-    - Anthropic
-    - OpenAI
-    - Ollama (Pending)
+__Secure__
+  - Agent runs in a microVM isolated from host (i.e., Docker Sandbox)
+  - Agent's filesystem access is limited to the project directory in which it is installed
+  - Agent's internet access is limited to a customizable allowlist
+  - API credentials are supplied explicitly through Docker Sandbox secrets with nothing exposed to the sandbox internals.
+  - Agent has deterministic human-in-the-loop (HITL) controls for dependency use approval
+
+__Customizable__
+  - Choose subagent models based on your risk level, task complexity, and cost (e.g., use open source model for Summarizer subagent, GPT for Maker subagent, and Claude for Checker subagent)
+  - Customize your subagent personas and outputs
+  - Define your own guardrails
+  - Limit or expand your allowlist of domains
+  - Incorporate your preferred QA tools to run deterministically after every build loop
+  - Adjust subagent ReAct and adversarial loops limits based on your use cases and risk tolerances
+
+__Lightweight__
+  - Add it to your project as a development dependency
+  - Turn on only when needed
+  - Built with minimal dependencies and overhead
+
+__Supported Model Providers__
+  - Anthropic
+  - Ollama (Pending)
+  - OpenAI
+
+__Supported Languages__
+  - Python
 
 ## Requirements
 
-- [Docker Sandbox (sbx)](https://www.docker.com/products/docker-sandboxes/) 0.28+
-- [uv](https://docs.astral.sh/uv/) 0.11+
+- [Docker Sandbox (sbx)](https://www.docker.com/products/docker-sandboxes/) >= 0.28, <= 0.30
+- [uv](https://docs.astral.sh/uv/) >= 0.11
 
 ## Download and Installation
 
 ```bash
-uv add "tern @ git+https://github.com/keiferc/tern.git"
+uv add --dev "tern @ git+https://github.com/keiferc/tern.git"
 ```
 
 ## Usage
@@ -67,13 +82,13 @@ subcommand flags:
 
 ```bash
 .tern
-├── checker.md # for customizing Checker subagent
-├── config.yaml # for specifying models and allowable agent tools
-├── CONSTITUTION.md # for defining rules that apply to all agents
-├── maker.md # for customizing Maker subagent
-├── planner.md # for customizing Planner subagent
-├── spec.yaml # Docker Sandbox Mixin Kit for customizing sandbox
-└── summarizer.md # for customizing Summarizer subagent
+├── checker.md # Checker subagent template
+├── config.yaml # Customizable parameters e.g., subagent models, loop limits
+├── CONSTITUTION.md # Rules that apply to all subagents
+├── maker.md # Maker subagent template
+├── planner.md # Planner subagent template
+├── spec.yaml # Docker Kit for customizing sandbox
+└── summarizer.md # Summarizer subagent template
 ```
 
 ### Store API keys (once per project)
@@ -117,10 +132,6 @@ flowchart TB
     have_issues -- no --> user
 ```
 
-## Known Bugs
-
-- If you have both a Claude API key and a Claude subscription and you logged in with the API key and re-logged in with your subscription, sbx would still set the API key variable, so Claude would spend from your API credits instead of from your subscription quota, even after sandbox removal. Fix: since ~/.claude is persistent across sandboxes, rm -rf ~/.claude, then /login with your subscription plan.
-
 ## Contributing
 
 ### Installation
@@ -139,3 +150,11 @@ $ uv run pre-commit install
 - Ensure style compliance with `ruff` (e.g., `uv run ruff check --fix`, `uv run ruff format`)
 - Containerize releases with Docker
 - Submit pull requests to `dev`
+
+### Backlog
+- I/O performance optimization through concurrency and rate limiting
+- Open source model support with Ollama
+- AIOps and observability
+- User commands (e.g., token usage status, ReAct loop interruption)
+- Knowledge graph representation of codebase
+- Modes (e.g., build mode, debugging mode, research mode, refactor mode)
