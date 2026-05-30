@@ -124,7 +124,7 @@ flowchart TB
     dep_check --> new_deps{"new dependencies?"}
     new_deps -- no --> qa_tools["QA tools runner"]
     new_deps -- yes --> user
-    approve_deps -- no --> maker
+    approve_deps -- no --> planner
     approve_deps -- yes --> qa_tools
     qa_tools --> checker["checker subagent"]
     checker --> have_issues{"have issues?"}
