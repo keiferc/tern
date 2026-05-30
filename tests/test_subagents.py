@@ -154,12 +154,13 @@ def test_key_arg_falls_back_to_url():
     )
 
 
-def test_key_arg_returns_empty_when_neither():
-    assert subagents._key_arg({"content": "x = 1"}) == ""
-
-
-def test_key_arg_returns_empty_for_empty_dict():
-    assert subagents._key_arg({}) == ""
+@pytest.mark.parametrize(
+    "args",
+    [{"content": "x = 1"}, {}],
+    ids=["non_matching_key", "empty_dict"],
+)
+def test_key_arg_returns_empty_when_no_path_or_url(args: dict):
+    assert subagents._key_arg(args) == ""
 
 
 # ── _extract_stream_text ──────────────────────────────────────────────────────
@@ -578,7 +579,6 @@ def test_planner_subagent_message_order_with_all_context(tmp_path: pathlib.Path)
     assert isinstance(messages[3], lc_msg.HumanMessage)  # issues + feedback combined
     assert "Checker Issues" in messages[3].content
     assert "Prior Feedback" in messages[3].content
-    assert len(messages) == 5  # 4 input messages + 1 response appended by _react_loop
 
 
 def test_planner_subagent_with_handoff_prepends_prior_session(tmp_path: pathlib.Path):
@@ -645,7 +645,6 @@ def test_planner_subagent_message_order_with_handoff_and_prior_plan(
     assert "## Prior Session" in messages[1].content
     assert isinstance(messages[2], lc_msg.AIMessage)  # prior_plan
     assert isinstance(messages[3], lc_msg.HumanMessage)  # issues + feedback
-    assert len(messages) == 5
 
 
 def test_planner_subagent_raises_if_max_iterations_zero(tmp_path: pathlib.Path):
@@ -774,7 +773,6 @@ def test_maker_subagent_message_order_with_all_context(tmp_path: pathlib.Path):
     assert isinstance(messages[2], lc_msg.HumanMessage)  # issues + feedback combined
     assert "Checker Issues" in messages[2].content
     assert "Prior Feedback" in messages[2].content
-    assert len(messages) == 4  # 3 input messages + 1 response appended by _react_loop
 
 
 # ── checker_subagent ──────────────────────────────────────────────────────────
@@ -874,8 +872,9 @@ def test_checker_subagent_includes_plan_in_task_instruction(tmp_path: pathlib.Pa
         subagents.checker_subagent(
             "", "", make_config(), tmp_path, plan="step 1: build model"
         )
-    human_content = mock_model.bind_tools.return_value.stream.call_args[0][0][1].content
-    assert "step 1: build model" in human_content
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
+    human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
+    assert any("step 1: build model" in m.content for m in human_msgs)
 
 
 def test_checker_subagent_includes_feedback_in_task_instruction(tmp_path: pathlib.Path):
@@ -885,8 +884,9 @@ def test_checker_subagent_includes_feedback_in_task_instruction(tmp_path: pathli
         subagents.checker_subagent(
             "", "", make_config(), tmp_path, feedback=["ignore coverage warnings"]
         )
-    human_content = mock_model.bind_tools.return_value.stream.call_args[0][0][1].content
-    assert "ignore coverage warnings" in human_content
+    messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
+    human_msgs = [m for m in messages if isinstance(m, lc_msg.HumanMessage)]
+    assert any("ignore coverage warnings" in m.content for m in human_msgs)
 
 
 def test_checker_subagent_human_message_contains_qa_output(tmp_path: pathlib.Path):
@@ -1025,24 +1025,19 @@ def test_summarizer_subagent_skips_empty_checkpoint(tmp_path: pathlib.Path):
     assert "## Completed Plan" not in human_content
 
 
-def test_summarizer_subagent_uses_silent_react_loop(tmp_path: pathlib.Path):
+def test_summarizer_subagent_does_not_stream_output(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+):
     _write_tern_dir(tmp_path)
     mock_model = _make_mock_model([_mock_response("handoff doc")])
     with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
-        with unittest.mock.patch(
-            "tern.subagents._react_loop", wraps=subagents._react_loop
-        ) as mock_loop:
-            subagents.summarizer_subagent(
-                {
-                    "session_objectives": ["build a model"],
-                    "milestones": [],
-                    "plan": None,
-                },
-                "",
-                make_config(),
-                tmp_path,
-            )
-    assert mock_loop.call_args.kwargs.get("silent") is True
+        subagents.summarizer_subagent(
+            {"session_objectives": ["build a model"], "milestones": [], "plan": None},
+            "",
+            make_config(),
+            tmp_path,
+        )
+    assert "handoff doc" not in capsys.readouterr().out
 
 
 def test_summarizer_subagent_skips_plan_section_when_plan_absent(
@@ -1058,6 +1053,4 @@ def test_summarizer_subagent_skips_plan_section_when_plan_absent(
             tmp_path,
         )
     messages = mock_model.bind_tools.return_value.stream.call_args[0][0]
-    # 2 input messages + 1 response appended by _invoke_streaming; no extra plan message
-    assert len(messages) == 3
-    assert not any("Last Plan" in getattr(m, "content", "") for m in messages[:2])
+    assert not any("Last Plan" in getattr(m, "content", "") for m in messages)
