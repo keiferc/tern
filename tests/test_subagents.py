@@ -1025,6 +1025,26 @@ def test_summarizer_subagent_skips_empty_checkpoint(tmp_path: pathlib.Path):
     assert "## Completed Plan" not in human_content
 
 
+def test_summarizer_subagent_uses_silent_react_loop(tmp_path: pathlib.Path):
+    _write_tern_dir(tmp_path)
+    mock_model = _make_mock_model([_mock_response("handoff doc")])
+    with unittest.mock.patch("tern.models.get_model", return_value=mock_model):
+        with unittest.mock.patch(
+            "tern.subagents._react_loop", wraps=subagents._react_loop
+        ) as mock_loop:
+            subagents.summarizer_subagent(
+                {
+                    "session_objectives": ["build a model"],
+                    "milestones": [],
+                    "plan": None,
+                },
+                "",
+                make_config(),
+                tmp_path,
+            )
+    assert mock_loop.call_args.kwargs.get("silent") is True
+
+
 def test_summarizer_subagent_skips_plan_section_when_plan_absent(
     tmp_path: pathlib.Path,
 ):

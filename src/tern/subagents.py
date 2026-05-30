@@ -231,6 +231,7 @@ def summarizer_subagent(
         messages,
         config.max_iterations["summarizer"],
         "summarizer_subagent",
+        silent=True,
     )
     return _extract_content(response)
 

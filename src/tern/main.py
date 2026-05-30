@@ -153,7 +153,8 @@ def cmd_on(args: argparse.Namespace) -> None:
             sandbox,
             "sh",
             "-lc",
-            "echo 'Preparing tern agent...' && uv sync --quiet && /home/agent/.venv/bin/tern _repl",
+            "echo 'Preparing tern agent...' && uv sync --quiet "
+            "&& /home/agent/.venv/bin/tern _repl",
         ]
     )
     sys.exit(result.returncode)
@@ -182,7 +183,7 @@ def cmd_down(args: argparse.Namespace) -> None:
 
 
 def cmd_repl(args: argparse.Namespace) -> None:
-    try:
+    try:  # readline is Unix only
         import readline  # noqa: F401
     except ImportError:
         pass
@@ -192,6 +193,7 @@ def cmd_repl(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     sys.stdout.reconfigure(line_buffering=True)  # ty: ignore[unresolved-attribute]
+    tern_ui.print_banner()
 
     cwd = pathlib.Path.cwd()
     graph, graph_config = _init_repl_graph(cwd)

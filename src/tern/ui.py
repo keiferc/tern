@@ -4,9 +4,39 @@ import sys
 import threading
 import typing as T
 
+_BANNER = r"""
+              ###++---++++--++
+                   ##+++++-++----+
+                       ##+++++++++++++
+                          +++++++++++++---
+                             -++------------
+                              +----------+---+
+                               +---------+---
+                              --------------
+                              -----------++
+                             ------------+#
+                             -------------+
+                            -++------------######
+                           ------------------######
+                       --------------++--------+#   ++-
+      +-------------++-++-----+++++#+++++####
+"""
+
+
+def print_banner() -> None:
+    print(_BANNER, flush=True)
+
 
 def _use_ansi() -> bool:
     return sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+
+
+_STAGE_COLORS: dict[str, str] = {
+    "Planning": "\033[34m",
+    "Implementing": "\033[93m",
+    "Reviewing": "\033[36m",
+    "Generating handoff": "\033[32m",
+}
 
 
 def print_stage(name: str) -> None:
@@ -14,7 +44,8 @@ def print_stage(name: str) -> None:
     if _use_ansi():
         cols = shutil.get_terminal_size(fallback=(80, 24)).columns
         bar = "─" * max(0, cols - len(name) - 5)
-        sys.stdout.write(f"\033[1m── {name} {bar}\033[0m\n")
+        color = _STAGE_COLORS.get(name, "")
+        sys.stdout.write(f"{color}\033[1m── {name} {bar}\033[0m\n")
         sys.stdout.flush()
     else:
         print(f"── {name}", flush=True)
