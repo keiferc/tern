@@ -9,6 +9,7 @@ import pytest
 import tern.agent as agent
 import tern.config as tern_config
 import tern.subagents as tern_subagents
+import tern.ui as tern_ui
 
 
 def make_config() -> tern_config.Config:
@@ -47,6 +48,8 @@ def make_state(**kwargs: T.Any) -> agent.AgentState:
             "feedback": [],
             "maker_checker_cycles": 0,
             "milestones": [],
+            "session_objectives": [],
+            "session_files": [],
             **kwargs,
         },
     )
@@ -189,6 +192,93 @@ def test_user_node_returns_empty_dict():
     assert agent.user_node(state) == {}
 
 
+def test_planner_node_prints_planning_banner(tmp_path: pathlib.Path):
+    state = make_state(objective="build a model")
+    with unittest.mock.patch("tern.subagents.planner_subagent", return_value="plan"):
+        with unittest.mock.patch.object(tern_ui, "print_stage") as mock_stage:
+            agent.planner_node(state, make_config(), tmp_path)
+    mock_stage.assert_called_once_with("Planning")
+
+
+def test_maker_node_prints_implementing_banner(tmp_path: pathlib.Path):
+    state = make_state(objective="build a model", plan="step 1")
+    with unittest.mock.patch.object(tern_subagents, "maker_subagent", return_value=[]):
+        with unittest.mock.patch.object(tern_ui, "print_stage") as mock_stage:
+            agent.maker_node(state, make_config(), tmp_path)
+    mock_stage.assert_called_once_with("Implementing")
+
+
+def test_dep_check_node_prints_reviewing_banner(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    (tmp_path / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    with unittest.mock.patch.object(tern_ui, "print_stage") as mock_stage:
+        agent.dep_check_node(make_state())
+    mock_stage.assert_called_once_with("Reviewing")
+
+
+def test_qa_runner_node_does_not_print_stage_banner():
+    with unittest.mock.patch.object(tern_ui, "print_stage") as mock_stage:
+        agent.qa_runner_node(make_config())
+    mock_stage.assert_not_called()
+
+
+def test_checker_node_does_not_print_stage_banner(tmp_path: pathlib.Path):
+    state = make_state(qa_output="", written_files=["ghost.py"])
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ):
+        with unittest.mock.patch.object(tern_ui, "print_stage") as mock_stage:
+            agent.checker_node(state, make_config(), tmp_path)
+    mock_stage.assert_not_called()
+
+
+def test_summarizer_node_prints_generating_handoff_banner(tmp_path: pathlib.Path):
+    state = make_state()
+    with unittest.mock.patch.object(
+        tern_subagents, "summarizer_subagent", return_value=""
+    ):
+        with unittest.mock.patch.object(tern_ui, "print_stage") as mock_stage:
+            agent.summarizer_node(state, make_config(), tmp_path)
+    mock_stage.assert_called_once_with("Generating handoff")
+
+
+def test_checker_node_prints_done_no_issues(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+):
+    state = make_state(qa_output="", written_files=["ghost.py"])
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ):
+        agent.checker_node(state, make_config(), tmp_path)
+    assert "done — no issues" in capsys.readouterr().out
+
+
+def test_checker_node_prints_issues(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+):
+    state = make_state(qa_output="", written_files=["ghost.py"])
+    with unittest.mock.patch.object(
+        tern_subagents,
+        "checker_subagent",
+        return_value=["unused import", "missing type hint"],
+    ):
+        agent.checker_node(state, make_config(), tmp_path)
+    out = capsys.readouterr().out
+    assert "  - unused import" in out
+    assert "  - missing type hint" in out
+
+
+def test_checker_node_prints_synthetic_issue_when_no_files(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+):
+    state = make_state(qa_output="", written_files=[], maker_checker_cycles=1)
+    agent.checker_node(state, make_config(), tmp_path)
+    assert "  - Maker wrote no files" in capsys.readouterr().out
+
+
 def test_planner_node_returns_plan_fields(tmp_path: pathlib.Path):
     state = make_state(objective="build a model")
     with unittest.mock.patch(
@@ -237,6 +327,25 @@ def test_planner_node_passes_context_to_planner_subagent(tmp_path: pathlib.Path)
     assert kwargs.get("prior_plan") == "old plan"
     assert kwargs.get("issues") == ["unused import"]
     assert kwargs.get("feedback") == ["fix imports"]
+
+
+def test_planner_node_passes_handoff_when_file_exists(tmp_path: pathlib.Path):
+    (tmp_path / "HANDOFF.md").write_text("prior session content", encoding="utf-8")
+    state = make_state(objective="build a model")
+    with unittest.mock.patch(
+        "tern.subagents.planner_subagent", return_value="plan"
+    ) as mock_planner:
+        agent.planner_node(state, make_config(), tmp_path)
+    assert mock_planner.call_args.kwargs.get("handoff") == "prior session content"
+
+
+def test_planner_node_omits_handoff_when_file_absent(tmp_path: pathlib.Path):
+    state = make_state(objective="build a model")
+    with unittest.mock.patch(
+        "tern.subagents.planner_subagent", return_value="plan"
+    ) as mock_planner:
+        agent.planner_node(state, make_config(), tmp_path)
+    assert mock_planner.call_args.kwargs.get("handoff") is None
 
 
 def test_maker_node_passes_context_to_maker_subagent(tmp_path: pathlib.Path):
@@ -381,6 +490,7 @@ def test_checker_node_skips_missing_files(
         "feedback": [],
         "maker_checker_cycles": 0,
         "milestones": ["step 1"],
+        "session_files": [str(tmp_path / "ghost.py")],
     }
 
 
@@ -399,6 +509,7 @@ def test_checker_node_silently_skips_path_outside_cwd(
         "feedback": [],
         "maker_checker_cycles": 0,
         "milestones": ["step 1"],
+        "session_files": [str(outside)],
     }
 
 
@@ -407,20 +518,51 @@ def test_summarizer_node_returns_empty_dict(tmp_path: pathlib.Path):
     assert agent.summarizer_node(state, make_config(), tmp_path) == {}
 
 
-def test_summarizer_node_writes_handoff_doc(tmp_path: pathlib.Path):
+def test_summarizer_node_writes_handoff_doc(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    cwd = tmp_path / "project"
+    cwd.mkdir()
+    tern_dir = cwd / ".tern"
+    tern_dir.mkdir()
+    monkeypatch.chdir(cwd)
     state = make_state()
     with unittest.mock.patch.object(
         tern_subagents, "summarizer_subagent", return_value="# Handoff\n\nDone."
     ):
-        with unittest.mock.patch("pathlib.Path.cwd", return_value=tmp_path):
-            agent.summarizer_node(state, make_config(), tmp_path)
-    assert (tmp_path / "HANDOFF.md").read_text() == "# Handoff\n\nDone."
+        agent.summarizer_node(state, make_config(), tern_dir)
+    assert (tern_dir / "HANDOFF.md").read_text() == "# Handoff\n\nDone."
+
+
+def test_summarizer_node_prints_path_when_doc_written(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+):
+    cwd = tmp_path / "project"
+    cwd.mkdir()
+    tern_dir = cwd / ".tern"
+    tern_dir.mkdir()
+    monkeypatch.chdir(cwd)
+    state = make_state()
+    with unittest.mock.patch.object(
+        tern_subagents, "summarizer_subagent", return_value="# Handoff\n\nDone."
+    ):
+        agent.summarizer_node(state, make_config(), tern_dir)
+    assert ".tern/HANDOFF.md" in capsys.readouterr().out
+
+
+def test_summarizer_node_prints_nothing_extra_when_empty(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+):
+    state = make_state()
+    agent.summarizer_node(state, make_config(), tmp_path)
+    assert "saved to" not in capsys.readouterr().out
 
 
 def test_summarizer_node_skips_write_when_empty(tmp_path: pathlib.Path):
     state = make_state()
-    with unittest.mock.patch("pathlib.Path.cwd", return_value=tmp_path):
-        agent.summarizer_node(state, make_config(), tmp_path)
+    agent.summarizer_node(state, make_config(), tmp_path)
     assert not (tmp_path / "HANDOFF.md").exists()
 
 
@@ -558,11 +700,66 @@ def test_checker_node_no_written_files_at_cycle_limit(tmp_path: pathlib.Path):
     assert result.get("plan_approved") is None
 
 
+def test_checker_node_passes_plan_and_feedback_to_checker_subagent(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "foo.py").write_text("x = 1")
+    state = make_state(
+        qa_output="",
+        written_files=[str(tmp_path / "foo.py")],
+        plan="step 1: build model",
+        feedback=["ignore coverage warnings"],
+    )
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ) as mock_checker:
+        agent.checker_node(state, make_config(), tmp_path)
+    assert mock_checker.call_args.kwargs.get("plan") == "step 1: build model"
+    assert mock_checker.call_args.kwargs.get("feedback") == ["ignore coverage warnings"]
+
+
+def test_checker_node_appends_session_files_on_clean_pass(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "foo.py").write_text("x = 1")
+    state = make_state(
+        qa_output="",
+        written_files=[str(tmp_path / "foo.py")],
+        plan="step 1",
+    )
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=[]
+    ):
+        result = agent.checker_node(state, make_config(), tmp_path)
+    assert result["session_files"] == [str(tmp_path / "foo.py")]
+
+
+def test_checker_node_does_not_append_session_files_on_issues(tmp_path: pathlib.Path):
+    state = make_state(qa_output="", written_files=["ghost.py"])
+    with unittest.mock.patch.object(
+        tern_subagents, "checker_subagent", return_value=["unused import"]
+    ):
+        result = agent.checker_node(state, make_config(), tmp_path)
+    assert "session_files" not in result
+
+
 # ── messages accumulation ─────────────────────────────────────────────────
 
 
 def test_milestones_field_uses_add_reducer():
     annotated_args = T.get_args(agent.AgentState.__annotations__["milestones"])
+    assert operator.add in annotated_args
+
+
+def test_session_objectives_field_uses_add_reducer():
+    annotated_args = T.get_args(agent.AgentState.__annotations__["session_objectives"])
+    assert operator.add in annotated_args
+
+
+def test_session_files_field_uses_add_reducer():
+    annotated_args = T.get_args(agent.AgentState.__annotations__["session_files"])
     assert operator.add in annotated_args
 
 

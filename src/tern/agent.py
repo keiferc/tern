@@ -11,6 +11,7 @@ import langgraph.graph.state as lg_state
 
 import tern.config as tern_config
 import tern.subagents as tern_subagents
+import tern.ui as tern_ui
 
 # ========================================================================= #
 #                                                                           #
@@ -32,6 +33,8 @@ class AgentState(T.TypedDict):
     feedback: list[str]
     maker_checker_cycles: int
     milestones: T.Annotated[list[str], operator.add]
+    session_objectives: T.Annotated[list[str], operator.add]
+    session_files: T.Annotated[list[str], operator.add]
 
 
 INITIAL_STATE: dict = {
@@ -47,6 +50,8 @@ INITIAL_STATE: dict = {
     "feedback": [],
     "maker_checker_cycles": 0,
     "milestones": [],
+    "session_objectives": [],
+    "session_files": [],
 }
 
 
@@ -64,11 +69,16 @@ def user_node(state: AgentState) -> dict:
 def planner_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
-    print("planning…", flush=True)
+    tern_ui.print_stage("Planning")
+    handoff_path = tern_dir / "HANDOFF.md"
+    handoff = (
+        handoff_path.read_text(encoding="utf-8") if handoff_path.exists() else None
+    )
     plan = tern_subagents.planner_subagent(
         state["objective"],  # ty: ignore[invalid-argument-type]
         config,
         tern_dir,
+        handoff=handoff,
         prior_plan=state["plan"],
         issues=state["issues"],
         feedback=state["feedback"],
@@ -86,7 +96,7 @@ def planner_node(
 def maker_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
-    print("implementing…", flush=True)
+    tern_ui.print_stage("Implementing")
     files = tern_subagents.maker_subagent(
         state["objective"],  # ty: ignore[invalid-argument-type]
         state["plan"],  # ty: ignore[invalid-argument-type]
@@ -102,7 +112,7 @@ def maker_node(
 
 
 def dep_check_node(state: AgentState) -> dict:
-    print("checking dependencies…", flush=True)
+    tern_ui.print_stage("Reviewing")
     cwd = pathlib.Path.cwd()
     pyproject = tomllib.loads((cwd / "pyproject.toml").read_text(encoding="utf-8"))
     raw_deps = pyproject.get("project", {}).get("dependencies", [])
@@ -115,7 +125,6 @@ def dep_check_node(state: AgentState) -> dict:
 
 
 def qa_runner_node(config: tern_config.Config) -> dict:
-    print("running QA…", flush=True)
     output = ""
     for cmd in config.checker_tools:
         parts = shlex.split(cmd)
@@ -132,38 +141,35 @@ def qa_runner_node(config: tern_config.Config) -> dict:
 def checker_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
-    print("reviewing…", flush=True)
     if not state["written_files"]:
         issues = ["Maker wrote no files. Use write_file to implement the plan."]
+        print(f"  - {issues[0]}")
         if (
             state["maker_checker_cycles"]
             >= config.max_iterations["maker_checker_cycles"]
         ):
             return {"issues": issues, "plan_approved": None, "feedback": []}
         return {"issues": issues, "feedback": []}
-    file_contents = ""
-    cwd = pathlib.Path.cwd().resolve()
-    for path_str in state["written_files"]:
-        try:
-            resolved = pathlib.Path(path_str).resolve()
-            rel = resolved.relative_to(cwd)
-            content = resolved.read_text(encoding="utf-8")
-            file_contents += f"=== {rel} ===\n{content}\n"
-        except FileNotFoundError, ValueError:
-            pass
+    file_contents = _read_file_contents(state["written_files"])
     issues = tern_subagents.checker_subagent(
         state["qa_output"],  # ty: ignore[invalid-argument-type]
         file_contents,
         config,
         tern_dir,
+        plan=state["plan"],
+        feedback=state["feedback"],
     )
     if not issues:
+        print("  done — no issues")
         return {
             "issues": [],
             "feedback": [],
             "maker_checker_cycles": 0,
             "milestones": [state["plan"]],
+            "session_files": state["written_files"],
         }
+    for issue in issues:
+        print(f"  - {issue}")
     if state["maker_checker_cycles"] >= config.max_iterations["maker_checker_cycles"]:
         return {"issues": issues, "plan_approved": None, "feedback": []}
     return {"issues": issues, "feedback": []}
@@ -172,10 +178,14 @@ def checker_node(
 def summarizer_node(
     state: AgentState, config: tern_config.Config, tern_dir: pathlib.Path
 ) -> dict:
-    print("generating handoff…", flush=True)
-    doc = tern_subagents.summarizer_subagent(dict(state), config, tern_dir)
+    tern_ui.print_stage("Generating handoff")
+    doc = tern_subagents.summarizer_subagent(
+        dict(state), _read_file_contents(state["session_files"]), config, tern_dir
+    )
     if doc:
-        pathlib.Path.cwd().joinpath("HANDOFF.md").write_text(doc, encoding="utf-8")
+        (tern_dir / "HANDOFF.md").write_text(doc, encoding="utf-8")
+        rel = (tern_dir / "HANDOFF.md").relative_to(pathlib.Path.cwd())
+        print(f"  saved to {rel}")
     return {}
 
 
@@ -202,8 +212,6 @@ def route_from_user(state: AgentState) -> str:
     if state["new_deps"] and state["deps_approved"] is True:
         return "qa_runner"
 
-    # deps_approved=False: user rejected the proposed deps; send maker back
-    # to rework the implementation without adding them.
     return "maker"
 
 
@@ -230,6 +238,20 @@ def route_from_checker(state: AgentState) -> str:
 
 def _normalize_pkg(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _read_file_contents(paths: list[str]) -> str:
+    result = ""
+    cwd = pathlib.Path.cwd().resolve()
+    for path_str in paths:
+        try:
+            resolved = pathlib.Path(path_str).resolve()
+            rel = resolved.relative_to(cwd)
+            content = resolved.read_text(encoding="utf-8")
+            result += f"=== {rel} ===\n{content}\n"
+        except FileNotFoundError, ValueError:
+            pass
+    return result
 
 
 # ========================================================================= #

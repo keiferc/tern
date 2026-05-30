@@ -1,4 +1,5 @@
 import pathlib
+import sys
 import typing as T
 
 import langchain.messages as lc_msg
@@ -7,6 +8,11 @@ import langchain_core.tools as lc_tools
 import tern.config as tern_config
 import tern.models as tern_models
 import tern.tools as tern_tools
+
+
+class StreamError(RuntimeError):
+    """Raised when a model stream returns no chunks."""
+
 
 _NO_ISSUES_PHRASES: frozenset[str] = frozenset(
     {
@@ -36,6 +42,7 @@ def planner_subagent(
     config: tern_config.Config,
     tern_dir: pathlib.Path,
     *,
+    handoff: str | None = None,
     prior_plan: str | None = None,
     issues: list[str] | None = None,
     feedback: list[str] | None = None,
@@ -47,9 +54,14 @@ def planner_subagent(
     ]
     model = tern_models.get_model(config, "planner").bind_tools(tools)
     tool_map = {t.name: t for t in tools}
+    objective_content = (
+        f"## Prior Session\n{handoff}\n\n## Current Objective\n{objective}"
+        if handoff and handoff.strip()
+        else objective
+    )
     messages: list[object] = [
         lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "planner")),
-        lc_msg.HumanMessage(content=objective),
+        lc_msg.HumanMessage(content=objective_content),
     ]
     if prior_plan:
         messages.append(lc_msg.AIMessage(content=prior_plan))
@@ -118,6 +130,9 @@ def checker_subagent(
     file_contents: str,
     config: tern_config.Config,
     tern_dir: pathlib.Path,
+    *,
+    plan: str | None = None,
+    feedback: list[str] | None = None,
 ) -> list[str]:
     tools: T.Sequence[lc_tools.BaseTool] = [
         tern_tools.web_fetch,
@@ -138,13 +153,17 @@ def checker_subagent(
     else:
         preamble = "no preamble. Review the QA output below for issues.\n"
 
-    task_instruction = (
-        f"{preamble}\n## QA Tool Output\n{qa_output}\n\n"
-        "Report each issue on its own line. If there are no issues, output nothing "
-        "— an empty response. "
-    )
+    task_instruction = f"{preamble}\n## QA Tool Output\n{qa_output}\n"
+    if plan:
+        task_instruction += f"\n## Approved Plan\n{plan}\n"
+    if feedback:
+        task_instruction += "\n## Session Feedback\n" + "\n".join(feedback) + "\n"
     if file_contents:
-        task_instruction += f"\n\n## Written Files\n{file_contents}"
+        task_instruction += f"\n## Written Files\n{file_contents}\n"
+    task_instruction += (
+        "\nReport each issue on its own line. "
+        "If there are no issues, output nothing — an empty response."
+    )
 
     messages: list[object] = [
         lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "checker")),
@@ -156,6 +175,7 @@ def checker_subagent(
         messages,
         config.max_iterations["checker"],
         "checker_subagent",
+        silent=True,
     )
     content = _extract_content(response)
     return [
@@ -166,36 +186,53 @@ def checker_subagent(
 
 
 def summarizer_subagent(
-    state: dict, config: tern_config.Config, tern_dir: pathlib.Path
+    state: dict,
+    file_contents: str,
+    config: tern_config.Config,
+    tern_dir: pathlib.Path,
 ) -> str:
     human_parts: list[str] = []
 
-    if state.get("objective"):
-        human_parts.append(f"## Objective\n{state['objective']}")
-    if state.get("written_files"):
-        human_parts.append("## Written Files\n" + "\n".join(state["written_files"]))
+    objectives = state.get("session_objectives") or []
+    if objectives:
+        numbered = "\n".join(f"{i + 1}. {o}" for i, o in enumerate(objectives))
+        human_parts.append(f"## Objectives\n{numbered}")
+    if file_contents:
+        human_parts.append(f"## Files Written\n{file_contents}")
     for milestone in state.get("milestones", []):
         if milestone:
             human_parts.append(f"## Completed Plan\n{milestone}")
 
     plan = state.get("plan")
+    if plan:
+        human_parts.append(f"## Last Plan\n{plan}")
 
-    if not human_parts and not plan:
+    if not human_parts:
         return ""
 
-    human_content = "Summarize the following session for handoff."
-    if human_parts:
-        human_content += "\n\n" + "\n\n".join(human_parts)
+    human_content = "Summarize the following session for handoff.\n\n" + "\n\n".join(
+        human_parts
+    )
 
-    model = tern_models.get_model(config, "summarizer")
+    tools: T.Sequence[lc_tools.BaseTool] = [
+        tern_tools.list_files,
+        tern_tools.read_file,
+    ]
+    model = tern_models.get_model(config, "summarizer").bind_tools(tools)
+    tool_map = {t.name: t for t in tools}
     messages: list[object] = [
         lc_msg.SystemMessage(content=_build_system_prompt(tern_dir, "summarizer")),
         lc_msg.HumanMessage(content=human_content),
     ]
-    if plan:
-        messages.append(lc_msg.AIMessage(content=f"## Plan\n{plan}"))
 
-    response = model.invoke(messages)  # ty: ignore[invalid-argument-type]
+    response = _react_loop(
+        model,
+        tool_map,
+        messages,
+        config.max_iterations["summarizer"],
+        "summarizer_subagent",
+        silent=True,
+    )
     return _extract_content(response)
 
 
@@ -237,16 +274,56 @@ def _is_no_issue_line(line: str) -> bool:
 
 
 def _extract_content(response: object) -> str:
-    # AIMessage.content is str (OpenAI) or list of blocks (Anthropic); normalise to str.
     content = getattr(response, "content", "")
     if isinstance(content, str):
         return content
     if isinstance(content, list):
+        # Final message list may contain plain str items (OpenAI) or dicts (Anthropic).
+        # Differs from _extract_stream_text, which only handles dicts with type="text".
         return "".join(
             block if isinstance(block, str) else block.get("text", "")
             for block in content
         )
     return ""
+
+
+def _key_arg(args: dict) -> str:
+    return args.get("path") or args.get("url") or ""
+
+
+def _extract_stream_text(chunk: object) -> str:
+    content = getattr(chunk, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        # Streaming chunks mix type="text" with tool_use/thinking; skip non-text blocks.
+        # Differs from _extract_content, which also passes through plain str list items.
+        return "".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return ""
+
+
+def _invoke_streaming(
+    model: T.Any, messages: list[object], caller_name: str, *, silent: bool = False
+) -> object:
+    response: object | None = None
+    printed_any = False
+    for chunk in model.stream(messages):
+        text = _extract_stream_text(chunk)
+        if text and not silent:
+            sys.stdout.write(text)
+            sys.stdout.flush()
+            printed_any = True
+        response = chunk if response is None else response + chunk
+    if response is None:
+        raise StreamError(f"{caller_name}: model returned empty stream")
+    if printed_any:
+        print()
+    messages.append(response)
+    return response
 
 
 def _execute_tool_calls(
@@ -255,6 +332,7 @@ def _execute_tool_calls(
     messages: list[object],
 ) -> None:
     for tool_call in tool_calls:
+        print(f"  → {tool_call['name']}({_key_arg(tool_call['args'])})")
         tool = tool_map.get(tool_call["name"])
         if tool is None:
             result = f"Error: unknown tool {tool_call['name']!r}"
@@ -274,15 +352,17 @@ def _react_loop(
     messages: list[object],
     max_iter: int,
     agent_name: str,
+    *,
+    silent: bool = False,
 ) -> object:
     response: object | None = None
     for _ in range(max_iter):
-        response = model.invoke(messages)
-        messages.append(response)
+        response = _invoke_streaming(model, messages, agent_name, silent=silent)
         tool_calls = getattr(response, "tool_calls", [])
         if not tool_calls:
             break
         _execute_tool_calls(tool_map, tool_calls, messages)
+        print()
     if response is None:
         raise ValueError(
             f"{agent_name} produced no response: max_iterations is {max_iter}"

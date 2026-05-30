@@ -1,7 +1,7 @@
 models:
-  planner:    "anthropic:claude-sonnet-4-6" # "openai:gpt-5.4"
+  planner:    "anthropic:claude-opus-4-6"   # "openai:gpt-5.4"
   maker:      "anthropic:claude-haiku-4-5"  # "openai:gpt-5.4-nano"
-  checker:    "anthropic:claude-haiku-4-5"  # "openai:gpt-5.4-nano"
+  checker:    "anthropic:claude-sonnet-4-6" # "openai:gpt-5.4-mini"
   summarizer: "anthropic:claude-haiku-4-5"  # "openai:gpt-5.4-nano"
 
 
@@ -9,7 +9,7 @@ max_iterations:
   planner: 20
   maker: 20
   checker: 10
-  summarizer: 5
+  summarizer: 15
   maker_checker_cycles: 5 # if issues remain after n cycles, inform user
 
 checker:
